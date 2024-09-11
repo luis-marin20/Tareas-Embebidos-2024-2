@@ -51,4 +51,4 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-/bme688
+/bme688/build
