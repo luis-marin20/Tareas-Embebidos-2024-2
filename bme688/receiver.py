@@ -114,6 +114,9 @@ while True:
     print("\n")
 
     if respuesta == "1":
+        """
+        Solicitamos una ventana y graficamos los datos
+        """
         datos = solicitar_ventana(window_size)
         mostrar_datos(datos)
 
@@ -134,9 +137,8 @@ while True:
         Enviar END\0 y cerrar conexion
         """
         terminar_conexion()
+        break
 
     else:
         print("ERROR")
-        break
-
 
