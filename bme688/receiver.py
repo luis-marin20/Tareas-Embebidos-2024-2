@@ -1,0 +1,128 @@
+import serial
+from struct import pack, unpack
+import matplotlib.pyplot as plt
+
+# Se configura el puerto y el BAUD_Rate
+PORT = 'COM3'  # Esto depende del sistema operativo
+BAUD_RATE = 115200  # Debe coincidir con la configuracion de la ESP32
+
+# Se abre la conexion serial
+ser = serial.Serial(PORT, BAUD_RATE, timeout = 1)
+
+# Funciones
+def send_message(message):
+    """ Funcion para enviar un mensaje a la ESP32 """
+    ser.write(message)
+
+def receive_response():
+    """ Funcion para recibir un mensaje de la ESP32 """
+    response = ser.readline() #Esta funcion lee hasta que se topa con un salto de linea o el tiempo de espera se agota
+    return response
+
+def receive_data(n):
+    """ Funcion que recibe n floats de la ESP32 
+    y los imprime en consola """
+    respuesta_encriptada = receive_response()
+    data_floats = unpack(f"{n}f", respuesta_encriptada) #Aqui desencripto la informacion
+    data = {
+        "ventana_presion": list(data_floats[:n]), #Aqui voy a colocar la ventana de presion
+        "pRMS": data_floats[n], #Aqui voy a colocar el RMS de la ventana de presion
+        "ventana_temperatura": list(data_floats[n+1:2*n+1]),  #Aqui voy a colocar la ventana de temperatura
+        "tRMS": data_floats[2*n+1]  #Aqui voy a colocar el RMS de la ventana de temperatura
+    }
+    
+    print(f'Received data dictionary: {data}')
+    return data
+
+def send_end_message():
+    """ Funcion para enviar un mensaje de finalizacion a la ESP32 """
+    end_message = pack('4s', 'END\0'.encode())
+    ser.write(end_message)
+
+def terminar_conexion():
+    # Se envia el mensaje de termino de comunicacion
+    send_end_message()
+    ser.close()
+
+# Funciones auxiliares
+def comenzar_lectura():
+    # Se envia el mensaje de inicio de comunicacion
+    message = pack('6s','BEGIN\0'.encode())
+    send_message(message)
+
+def leyendo(n):
+    # Se lee data por la conexion serial
+    while True:
+        if ser.in_waiting > 0: #verifica si hay datos en el puerto serial
+            try:
+                message = receive_data(n)
+                return message
+            except:
+                print('Error en leer mensaje')
+                continue
+
+def graficar(lista,variable):
+    x = list(range(len(lista)))
+    plt.plot(x, lista, marker='o', linestyle='-', color='b', label='Datos')
+    plt.xlabel('Mediciones')
+    plt.ylabel(variable)
+    plt.title('Gráfico de Dispersión con Línea')
+    plt.legend()
+    plt.show()
+
+def mostrar_datos(datos):
+    presiones = datos["ventana_presion"]
+    temperaturas = datos["ventana_temperatura"]
+    pRMS = datos["pRMS"]
+    tRMS = datos["tRMS"]
+    graficar(presiones, "Presión")
+    print(f"El RMS fue de {pRMS}")
+    graficar(temperaturas, "Temperatura")
+    print(f"El RMS fue de {tRMS}")
+
+
+def solicitar_ventana(n):
+    comenzar_lectura()
+    datos = leyendo(n)
+    mostrar_datos(datos)
+    #AQUI LE MANDO EL END??? 
+
+
+
+
+
+
+
+def marcador():
+    print("+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+")
+
+def desplegar_menu_principal():
+    marcador()
+    print("Presion y Temperatura vía BME688")
+    print("Selecciona una opcion:")
+    print("\n")
+    print("1: Solicitar una ventana de datos")
+    print("2: Cambiar el tamaño de la ventana de datos")
+    print("3: Cerrar la conexión")
+
+while True:
+    desplegar_menu_principal()
+
+    respuesta =  input("Ingresa el número de la opción elegida ")
+    print("\n")
+
+    if respuesta == "1":
+        print("opcion 1\n")
+        solicitar_ventana()
+
+    elif respuesta == "2":
+        print("opcion 2\n")
+
+    elif respuesta == "3":
+        print("opcion 3\n")
+
+    else:
+        print("ERROR")
+        break
+
+
