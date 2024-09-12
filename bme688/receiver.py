@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 PORT = 'COM3'  # Esto depende del sistema operativo
 BAUD_RATE = 115200  # Debe coincidir con la configuracion de la ESP32
 
+window_size = 20
+
 # Se abre la conexion serial
 ser = serial.Serial(PORT, BAUD_RATE, timeout = 1)
 
@@ -38,6 +40,11 @@ def send_end_message():
     """ Funcion para enviar un mensaje de finalizacion a la ESP32 """
     end_message = pack('4s', 'END\0'.encode())
     ser.write(end_message)
+
+def cambiar_ventana(new_size):
+    largo_mensaje = 7 + len(str(new_size))
+    change_message = pack(f'{largo_mensaje}s', f'CAMBIO{new_size}\0'.encode())
+    ser.write(change_message)
 
 def terminar_conexion():
     # Se envia el mensaje de termino de comunicacion
@@ -84,12 +91,7 @@ def mostrar_datos(datos):
 def solicitar_ventana(n):
     comenzar_lectura()
     datos = leyendo(n)
-    mostrar_datos(datos)
-    #AQUI LE MANDO EL END??? 
-
-
-
-
+    return datos
 
 
 
@@ -112,14 +114,26 @@ while True:
     print("\n")
 
     if respuesta == "1":
-        print("opcion 1\n")
-        solicitar_ventana()
+        datos = solicitar_ventana(window_size)
+        mostrar_datos(datos)
 
     elif respuesta == "2":
-        print("opcion 2\n")
+        respuesta2 =  input("Ingresa el nuevo tamaño de la ventana ")
+        respuesta2 = int(respuesta2)
+        if respuesta2 >= 5:
+            """
+            Cambiar el numero de ventana y enviar mensaje para que ellos lo cambien
+            """
+            cambiar_ventana(respuesta2) #Solicitamos al ESP32 que cambie el tamaño de la ventana
+            window_size = respuesta2 #Cambiamos el tamaño de la ventana para nosotros
+
+
 
     elif respuesta == "3":
-        print("opcion 3\n")
+        """
+        Enviar END\0 y cerrar conexion
+        """
+        terminar_conexion()
 
     else:
         print("ERROR")
