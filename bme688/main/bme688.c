@@ -376,6 +376,87 @@ void bme_read_data(void) {
     }
 }
 
+// Setea la ventana en la nvs
+void set_window_nvs(int32_t window) {
+    // Initialize NVS
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        // NVS partition was truncated and needs to be erased
+        // Retry nvs_flash_init
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK( err );
+
+    // Open
+    printf("\n");
+    printf("Opening Non-Volatile Storage (NVS) handle... ");
+    nvs_handle_t my_handle;
+    err = nvs_open("storage", NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) {
+        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
+    } else {+
+        printf("Done\n");
+
+        err = nvs_set_i32(my_handle, "window", window);
+        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+
+        // Commit written value.
+        // After setting any values, nvs_commit() must be called to ensure changes are written
+        // to flash storage. Implementations may write to storage at other times,
+        // but this is not guaranteed.
+        printf("Committing updates in NVS ... ");
+        err = nvs_commit(my_handle);
+        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+
+        // Close
+        nvs_close(my_handle);
+    }
+}
+
+// Obtine el valor de la ventana en la nvs. Si no existe aún, retorna 20 y lo setea en 20
+int32_t get_window_nvs(void){
+    // Initialize NVS
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        // NVS partition was truncated and needs to be erased
+        // Retry nvs_flash_init
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK( err );
+
+    // Open
+    printf("\n");
+    printf("Opening Non-Volatile Storage (NVS) handle... ");
+    nvs_handle_t my_handle;
+    err = nvs_open("storage", NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) {
+        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
+    } else {
+        printf("Done\n");
+
+        // Read
+        printf("Reading window from NVS ... ");
+        int32_t window = 20; // value will default to 0, if not set yet in NVS
+        err = nvs_get_i32(my_handle, "window", &window);
+        switch (err) {
+            case ESP_OK:
+                printf("Done\n");
+                printf("window = %" PRIu32 "\n", window);
+                break;
+            case ESP_ERR_NVS_NOT_FOUND:
+                printf("The window value is not initialized yet!\n");
+                break;
+            default :
+                printf("Error (%s) reading!\n", esp_err_to_name(err));
+        }
+        // Close
+        nvs_close(my_handle);
+    }
+}
+
+
 void app_main(void) {
     ESP_ERROR_CHECK(sensor_init());
     bme_get_chipid();
