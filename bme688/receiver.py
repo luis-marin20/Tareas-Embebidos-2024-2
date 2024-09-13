@@ -3,7 +3,7 @@ from struct import pack, unpack
 import matplotlib.pyplot as plt
 
 # Se configura el puerto y el BAUD_Rate
-PORT = 'COM3'  # Esto depende del sistema operativo
+PORT = 'COM4'  # Esto depende del sistema operativo
 BAUD_RATE = 115200  # Debe coincidir con la configuracion de la ESP32
 
 window_size = 20

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 #include <time.h>
 
 #include "driver/i2c.h"
@@ -10,6 +11,9 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_system.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 #include "math.h"
 #include "sdkconfig.h"
 
@@ -21,6 +25,8 @@
 #define UART_NUM UART_NUM_0  // UART port number
 #define BAUD_RATE 115200     // Baud rate
 #define M_PI 3.14159265358979323846
+
+#define REDIRECT_LOGS 1 // if redirect ESP log to another UART
 
 #define I2C_MASTER_SCL_IO GPIO_NUM_22  // GPIO pin
 #define I2C_MASTER_SDA_IO GPIO_NUM_21  // GPIO pin
@@ -85,6 +91,153 @@ esp_err_t bme_i2c_write(i2c_port_t i2c_num, uint8_t *data_addres, uint8_t *data_
     esp_err_t ret = i2c_master_cmd_begin(i2c_num, cmd, 1000 / portTICK_PERIOD_MS);
     i2c_cmd_link_delete(cmd);
     return ret;
+}
+
+// ------------ Connection ------------- //
+
+// Function for sending things to UART1
+static int uart1_printf(const char *str, va_list ap) {
+    char *buf;
+    vasprintf(&buf, str, ap);
+    uart_write_bytes(UART_NUM_1, buf, strlen(buf));
+    free(buf);
+    return 0;
+}
+
+// Setup of UART connections 0 and 1, and try to redirect logs to UART1 if asked
+static void uart_setup() {
+    uart_config_t uart_config = {
+        .baud_rate = 115200,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+    };
+
+    uart_param_config(UART_NUM_0, &uart_config);
+    uart_param_config(UART_NUM_1, &uart_config);
+    uart_driver_install(UART_NUM_0, BUF_SIZE * 2, 0, 0, NULL, 0);
+    uart_driver_install(UART_NUM_1, BUF_SIZE * 2, 0, 0, NULL, 0);
+
+    // Redirect ESP log to UART1
+    if (REDIRECT_LOGS) {
+        esp_log_set_vprintf(uart1_printf);
+    }
+}
+
+// Read UART_num for input with timeout of 1 sec
+int serial_read(char *buffer, int size){
+    int len = uart_read_bytes(UART_NUM, (uint8_t*)buffer, size, pdMS_TO_TICKS(1000));
+    return len;
+}
+
+// Setea la ventana en la nvs
+void set_window_nvs(int ventana) {
+    int32_t window = (int32_t)ventana;
+    // Initialize NVS
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        // NVS partition was truncated and needs to be erased
+        // Retry nvs_flash_init
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK( err );
+
+    // Open
+    printf("\n");
+    printf("Opening Non-Volatile Storage (NVS) handle... ");
+    nvs_handle_t my_handle;
+    err = nvs_open("storage", NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) {
+        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
+    } else {+
+        printf("Done\n");
+
+        err = nvs_set_i32(my_handle, "window", window);
+        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+
+        // Commit written value.
+        // After setting any values, nvs_commit() must be called to ensure changes are written
+        // to flash storage. Implementations may write to storage at other times,
+        // but this is not guaranteed.
+        printf("Committing updates in NVS ... ");
+        err = nvs_commit(my_handle);
+        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+
+        // Close
+        nvs_close(my_handle);
+    }
+}
+
+// Obtine el valor de la ventana en la nvs. Si no existe aún, retorna 20 y lo setea en 20
+int get_window_nvs(void){
+    // Initialize NVS
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        // NVS partition was truncated and needs to be erased
+        // Retry nvs_flash_init
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK( err );
+
+    // Open
+    printf("\n");
+    printf("Opening Non-Volatile Storage (NVS) handle... ");
+    nvs_handle_t my_handle;
+    err = nvs_open("storage", NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) {
+        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
+        return -1;
+    } else {
+        printf("Done\n");
+
+        // Read
+        printf("Reading window from NVS ... ");
+        int32_t window = 20; // value will default to 20, if not set yet in NVS
+        err = nvs_get_i32(my_handle, "window", &window);
+        switch (err) {
+            case ESP_OK:
+                printf("Done\n");
+                printf("window = %" PRIu32 "\n", window);
+                break;
+            case ESP_ERR_NVS_NOT_FOUND:
+                printf("The window value is not initialized yet!\n");
+                break;
+            default :
+                printf("Error (%s) reading!\n", esp_err_to_name(err));
+        }
+        // Close
+        int ventana = (int)window;
+        nvs_close(my_handle);
+        return ventana;
+    }
+}
+
+// Calcula la RMS de un array de floats
+float calc_RMS(float *arr, int ventana){
+    float raiz = 0;
+    float sum = 0;
+
+    for(int i = 0; i < ventana; i++){
+        sum += arr[i] * arr[i];
+    }
+
+    raiz = sqrt(sum/(float)ventana);
+    return raiz;
+}
+
+// reinicia la ESP y termina la conexión
+void restart_ESP(){
+    // Reiniciar la ESP y terminar conexión
+    for (int i = 10; i >= 0; i--) {
+        printf("Restarting in %d seconds...\n", i);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+    printf("Restarting now.\n");
+    fflush(stdout);
+    esp_restart();
 }
 
 // ------------ BME 688 ------------- //
@@ -399,17 +552,15 @@ int bme_pressure(uint32_t press_adc) {
     int64_t var3;
 
     int press_comp;
-    int press_raw;
-    int t_fine;
 
-    var1 = ((int32_t)t_fine >> 1) - 64000;
+    var1 = ((int32_t)press_adc >> 1) - 64000;
     var2 = ((((var1 >> 2) * (var1 >> 2)) >> 11) * (int32_t)par_p6) >> 2; 
     var2 = var2 + ((var1 * (int32_t)par_p5) << 1); 
     var2 = (var2 >> 2) + ((int32_t)par_p4 << 16); 
     var1 = (((((var1 >> 2) * (var1 >> 2)) >> 13) * ((int32_t)par_p3 << 5)) >> 3) + (((int32_t)par_p2 * var1) >> 1); 
     var1 = var1 >> 18; 
     var1 = ((32768 + var1) * (int32_t)par_p1) >> 15; 
-    press_comp = 1048576 - press_raw; 
+    press_comp = 1048576 - (int32_t)press_adc; 
     press_comp = (uint32_t)((press_comp - (var2 >> 12)) * ((uint32_t)3125)); 
     if (press_comp >= (1 << 30)) press_comp = ((press_comp / (uint32_t)var1) << 1); 
     else press_comp = ((press_comp << 1) / (uint32_t)var1); 
@@ -481,145 +632,12 @@ void bme_read_data(int window) {
     float press_rms = calc_RMS(press_data, window);
 
     // Enviamos los datos a la computadora
-    uart_write_bytes(UART_NUM_0, (const char *)temp_rms, sizeof(float));
-    uart_write_bytes(UART_NUM_0, (const char *)press_rms, sizeof(float));
-}
-
-// ------------ Connection ------------- //
-
-// Setup of UART connections 0 and 1, and try to redirect logs to UART1 if asked
-static void uart_setup() {
-    uart_config_t uart_config = {
-        .baud_rate = 115200,
-        .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-    };
-
-    uart_param_config(UART_NUM_0, &uart_config);
-    uart_param_config(UART_NUM_1, &uart_config);
-    uart_driver_install(UART_NUM_0, BUF_SIZE * 2, 0, 0, NULL, 0);
-    uart_driver_install(UART_NUM_1, BUF_SIZE * 2, 0, 0, NULL, 0);
-
-    // Redirect ESP log to UART1
-    if (REDIRECT_LOGS) {
-        esp_log_set_vprintf(uart1_printf);
-    }
-}
-
-// Read UART_num for input with timeout of 1 sec
-int serial_read(char *buffer, int size){
-    int len = uart_read_bytes(UART_NUM, (uint8_t*)buffer, size, pdMS_TO_TICKS(1000));
-    return len;
-}
-
-// Setea la ventana en la nvs
-void set_window_nvs(int ventana) {
-    int32_t window = (int32_t)ventana;
-    // Initialize NVS
-    esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        // NVS partition was truncated and needs to be erased
-        // Retry nvs_flash_init
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        err = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK( err );
-
-    // Open
-    printf("\n");
-    printf("Opening Non-Volatile Storage (NVS) handle... ");
-    nvs_handle_t my_handle;
-    err = nvs_open("storage", NVS_READWRITE, &my_handle);
-    if (err != ESP_OK) {
-        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
-    } else {+
-        printf("Done\n");
-
-        err = nvs_set_i32(my_handle, "window", window);
-        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
-
-        // Commit written value.
-        // After setting any values, nvs_commit() must be called to ensure changes are written
-        // to flash storage. Implementations may write to storage at other times,
-        // but this is not guaranteed.
-        printf("Committing updates in NVS ... ");
-        err = nvs_commit(my_handle);
-        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
-
-        // Close
-        nvs_close(my_handle);
-    }
-}
-
-// Obtine el valor de la ventana en la nvs. Si no existe aún, retorna 20 y lo setea en 20
-int get_window_nvs(void){
-    // Initialize NVS
-    esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        // NVS partition was truncated and needs to be erased
-        // Retry nvs_flash_init
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        err = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK( err );
-
-    // Open
-    printf("\n");
-    printf("Opening Non-Volatile Storage (NVS) handle... ");
-    nvs_handle_t my_handle;
-    err = nvs_open("storage", NVS_READWRITE, &my_handle);
-    if (err != ESP_OK) {
-        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
-    } else {
-        printf("Done\n");
-
-        // Read
-        printf("Reading window from NVS ... ");
-        int32_t window = 20; // value will default to 20, if not set yet in NVS
-        err = nvs_get_i32(my_handle, "window", &window);
-        switch (err) {
-            case ESP_OK:
-                printf("Done\n");
-                printf("window = %" PRIu32 "\n", window);
-                break;
-            case ESP_ERR_NVS_NOT_FOUND:
-                printf("The window value is not initialized yet!\n");
-                break;
-            default :
-                printf("Error (%s) reading!\n", esp_err_to_name(err));
-        }
-        // Close
-        int ventana = (int)window;
-        nvs_close(my_handle);
-        return ventana;
-    }
-}
-
-// Calcula la RMS de un array de floats
-float calc_RMS(float[] arr, int ventana){
-    float raiz = 0;
-    float sum = 0;
-
-    for(int i = 0; i++; i < ventana){
-        sum += arr[i] * arr[i];
-    }
-
-    raiz = sqrt(sum/(float)ventana);
-    return raiz;
-}
-
-// reinicia la ESP y termina la conexión
-void restart_ESP(){
-    // Reiniciar la ESP y terminar conexión
-    for (int i = 10; i >= 0; i--) {
-        printf("Restarting in %d seconds...\n", i);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-    printf("Restarting now.\n");
-    fflush(stdout);
-    esp_restart();
+    char send_tmp[20];
+    char send_press[20];
+    sprintf(send_tmp, "%f", temp_rms);
+    sprintf(send_press, "%f", press_rms);
+    uart_write_bytes(UART_NUM_0, send_tmp, sizeof(char)*20);
+    uart_write_bytes(UART_NUM_0, send_press, sizeof(char)*20);
 }
 
 void app_main(void) {
