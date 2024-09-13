@@ -27,7 +27,9 @@ def receive_data():
     respuesta_encriptada = receive_response()
     print("respuesta encriptada: ")
     print(respuesta_encriptada)
-    dato = unpack('>f', respuesta_encriptada) #Aqui desencripto la informacion
+    #dato = unpack('>f', respuesta_encriptada) #Aqui desencripto la informacion
+    dato_str = respuesta_encriptada.decode('utf-8') #Aqui desencripto la informacion
+    dato = float(dato_str)
     print("Dato:")
     print(dato)
     return dato
@@ -82,9 +84,15 @@ def leyendo(n):
                 datos_recibidos += [dato_nuevo]
                 print("El tamaño de la lista es: "+str(len(datos_recibidos)))
                 print("")
-                if len(datos_recibidos ==  2*n+2):
+                if len(datos_recibidos)==  2*n+2:
                     print("LLEGUE AL IF")
-                    return datos_recibidos
+                    data = {
+                        "ventana_presion": list(datos_recibidos[:n]), #Aqui voy a colocar la ventana de presion
+                        "pRMS": datos_recibidos[n], #Aqui voy a colocar el RMS de la ventana de presion
+                        "ventana_temperatura": list(datos_recibidos[n:2*n+1]),  #Aqui voy a colocar la ventana de temperatura
+                        "tRMS": datos_recibidos[2*n+1]  #Aqui voy a colocar el RMS de la ventana de temperatura
+                    }
+                    return data
             except:
                 continue
 
