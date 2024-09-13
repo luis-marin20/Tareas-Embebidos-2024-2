@@ -438,7 +438,7 @@ int32_t get_window_nvs(void){
 
         // Read
         printf("Reading window from NVS ... ");
-        int32_t window = 20; // value will default to 0, if not set yet in NVS
+        int32_t window = 20; // value will default to 20, if not set yet in NVS
         err = nvs_get_i32(my_handle, "window", &window);
         switch (err) {
             case ESP_OK:
