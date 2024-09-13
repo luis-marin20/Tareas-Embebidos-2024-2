@@ -43,7 +43,7 @@ def send_end_message():
 
 def cambiar_ventana(new_size):
     largo_mensaje = 7 + len(str(new_size))
-    change_message = pack(f'{largo_mensaje}s', f'CAMBIO {new_size}\0'.encode()) #pack('9s', 'CAMBIO6\0')
+    change_message = pack(f'{largo_mensaje}s', f'{new_size}\0'.encode()) #pack('9s', '6\0')
     ser.write(change_message)
 
 def terminar_conexion():
@@ -57,7 +57,7 @@ def comenzar_lectura():
         if ser.in_waiting > 0: #verifica si hay datos en el puerto serial
             try:
                 message = receive_response()
-                if b"WAITING" in message:
+                if b"READY" in message:
                     print("Mensaje de inicio recibido")
                     break
             except:

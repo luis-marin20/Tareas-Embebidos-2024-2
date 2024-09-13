@@ -636,20 +636,30 @@ void app_main(void) {
 
     // Esperamos respuesta de la computadora
     printf("Biggining read\n\n");
-    dataResponse1[6];
+    char dataResponse1[6];
     while (1) {
         int rLen = serial_read(dataResponse1, 6);
         if (rLen > 0) {
             if (strcmp(dataResponse1, "BEGIN") == 0) {
                 uart_write_bytes(UART_NUM, "OK\0", 3);
-                break;
+                // Obtenemos el tamaño de la ventana
+                int ventana = get_window_nvs();
+                printf("Comienza lectura\n\n");
+                bme_read_data(ventana);
+            }
+            else if (strcmp(dataResponse1, "END") == 0) {
+                uart_write_bytes(UART_NUM, "CLOSING\0", 3);
+                restart_ESP();
+            }
+            else {
+                // Si caemos aca es porque la computadora quiere que cambiemos el valor de la ventana, valor que fue enviado en forma de string
+                int ventana = atoi(dataResponse1);
+
+                // Seteamos la ventana en la nvs
+                set_window_nvs(ventana);
             }
         }
     }
-    printf("Comienza lectura\n\n");
-    bme_read_data();
-
-    restart_ESP()
 }
 
 
