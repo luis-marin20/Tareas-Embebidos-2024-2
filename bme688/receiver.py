@@ -137,8 +137,11 @@ while True:
         Enviar END\0 y cerrar conexion
         """
         terminar_conexion()
+        print("FIN DEL PROGRAMA")
+        marcador()
         break
 
     else:
-        print("ERROR")
+        print("ERROR: No es un input valido.")
+        print("Inputs validos: 1,2,3")
 
