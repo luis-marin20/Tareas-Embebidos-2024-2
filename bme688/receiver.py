@@ -93,7 +93,9 @@ def mostrar_datos(datos):
     pRMS = datos["pRMS"]
     tRMS = datos["tRMS"]
     graficar(presiones, "Presión")
+    print(presiones)
     print(f"El RMS fue de {pRMS}")
+    print(temperaturas)
     graficar(temperaturas, "Temperatura")
     print(f"El RMS fue de {tRMS}")
 
