@@ -432,16 +432,23 @@ void bme_get_mode(void) {
     printf("Valor de BME MODE: %2X \n\n", tmp);
 }
 
-void bme_read_data(void) {
+void bme_read_data(int window) {
     // Datasheet[23:41]
     // https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme688-ds000.pdf#page=23
 
     uint8_t tmp;
+    uint8_t prs;
 
-    // Se obtienen los datos de temperatura
+    // Inicializamos los arreglos que tendran los registros
+    float temp_data[window];
+    float press_data[window];
+
+    // Se obtienen los datos de temperatura y presion
     uint8_t forced_temp_addr[] = {0x22, 0x23, 0x24};
-    for (;;) {
+    uint8_t forced_press_addr[] = {0x1F, 0x20, 0x21};
+    for (int i = 0; i < window; i++) {
         uint32_t temp_adc = 0;
+        uint32_t press_adc = 0;
         bme_forced_mode();
         // Datasheet[41]
         // https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme688-ds000.pdf#page=41
@@ -453,10 +460,32 @@ void bme_read_data(void) {
         bme_i2c_read(I2C_NUM_0, &forced_temp_addr[2], &tmp, 1);
         temp_adc = temp_adc | (tmp & 0xf0) >> 4;
 
+        bme_i2c_read(I2C_NUM_0, &forced_press_addr[0], &prs, 1);
+        press_adc = press_adc | prs << 12;
+        bme_i2c_read(I2C_NUM_0, &forced_press_addr[1], &prs, 1);
+        press_adc = press_adc | prs << 4;
+        bme_i2c_read(I2C_NUM_0, &forced_press_addr[2], &prs, 1);
+        press_adc = press_adc | (prs & 0xf0) >> 4;
+
         uint32_t temp = bme_temp_celsius(temp_adc);
-        printf("Temperatura: %f\n", (float)temp / 100);
+        uint32_t press = bme_pressure(press_adc);
+        temp_data[i] = (float)temp / 100;
+        press_data[i] = (float)press / 100;
+
+        // Enviamos los datos a la computadora
+        uart_write_bytes(UART_NUM_0, (const char *)temp, sizeof(float));
+        uart_write_bytes(UART_NUM_0, (const char *)press, sizeof(float));
     }
+    // Calculamos el RMS de los datos
+    float temp_rms = calc_RMS(temp_data, window);
+    float press_rms = calc_RMS(press_data, window);
+
+    // Enviamos los datos a la computadora
+    uart_write_bytes(UART_NUM_0, (const char *)temp_rms, sizeof(float));
+    uart_write_bytes(UART_NUM_0, (const char *)press_rms, sizeof(float));
 }
+
+// ------------ Connection ------------- //
 
 // Setup of UART connections 0 and 1, and try to redirect logs to UART1 if asked
 static void uart_setup() {
@@ -594,11 +623,20 @@ void restart_ESP(){
 }
 
 void app_main(void) {
+    ESP_ERROR_CHECK(sensor_init());
+    bme_get_chipid();
+    bme_softreset();
+    bme_get_mode();
+    bme_forced_mode();
 
     uart_setup(); // Uart setup
 
+    // Avisamos que estamos listos para recibir datos
+    uart_write_bytes(UART_NUM, "READY\0", 6);
+
+    // Esperamos respuesta de la computadora
+    printf("Biggining read\n\n");
     dataResponse1[6];
-    printf("Beginning initialization... \n");
     while (1) {
         int rLen = serial_read(dataResponse1, 6);
         if (rLen > 0) {
@@ -608,11 +646,6 @@ void app_main(void) {
             }
         }
     }
-    ESP_ERROR_CHECK(sensor_init());
-    bme_get_chipid();
-    bme_softreset();
-    bme_get_mode();
-    bme_forced_mode();
     printf("Comienza lectura\n\n");
     bme_read_data();
 
