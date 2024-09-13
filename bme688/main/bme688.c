@@ -145,25 +145,25 @@ void set_window_nvs(int ventana) {
     ESP_ERROR_CHECK( err );
 
     // Open
-    printf("\n");
-    printf("Opening Non-Volatile Storage (NVS) handle... ");
+    //printf("\n");
+    //printf("Opening Non-Volatile Storage (NVS) handle... ");
     nvs_handle_t my_handle;
     err = nvs_open("storage", NVS_READWRITE, &my_handle);
     if (err != ESP_OK) {
-        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
-    } else {+
-        printf("Done\n");
+        //printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
+    } else {
+        //printf("Done\n");
 
         err = nvs_set_i32(my_handle, "window", window);
-        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+        //printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
 
         // Commit written value.
         // After setting any values, nvs_commit() must be called to ensure changes are written
         // to flash storage. Implementations may write to storage at other times,
         // but this is not guaranteed.
-        printf("Committing updates in NVS ... ");
+        //printf("Committing updates in NVS ... ");
         err = nvs_commit(my_handle);
-        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+        //printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
 
         // Close
         nvs_close(my_handle);
@@ -183,30 +183,30 @@ int get_window_nvs(void){
     ESP_ERROR_CHECK( err );
 
     // Open
-    printf("\n");
-    printf("Opening Non-Volatile Storage (NVS) handle... ");
+    //printf("\n");
+    //printf("Opening Non-Volatile Storage (NVS) handle... ");
     nvs_handle_t my_handle;
     err = nvs_open("storage", NVS_READWRITE, &my_handle);
     if (err != ESP_OK) {
-        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
+        //printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
         return -1;
     } else {
-        printf("Done\n");
+        //printf("Done\n");
 
         // Read
-        printf("Reading window from NVS ... ");
-        int32_t window = 20; // value will default to 20, if not set yet in NVS
+        //printf("Reading window from NVS ... ");
+        int32_t window = 10; // value will default to 20, if not set yet in NVS
         err = nvs_get_i32(my_handle, "window", &window);
         switch (err) {
             case ESP_OK:
-                printf("Done\n");
-                printf("window = %" PRIu32 "\n", window);
+                //printf("Done\n");
+                //printf("window = %" PRIu32 "\n", window);
                 break;
             case ESP_ERR_NVS_NOT_FOUND:
-                printf("The window value is not initialized yet!\n");
+                //printf("The window value is not initialized yet!\n");
                 break;
             default :
-                printf("Error (%s) reading!\n", esp_err_to_name(err));
+                //printf("Error (%s) reading!\n", esp_err_to_name(err));
         }
         // Close
         int ventana = (int)window;
@@ -232,10 +232,10 @@ float calc_RMS(float *arr, int ventana){
 void restart_ESP(){
     // Reiniciar la ESP y terminar conexión
     for (int i = 10; i >= 0; i--) {
-        printf("Restarting in %d seconds...\n", i);
+        //printf("Restarting in %d seconds...\n", i);
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
-    printf("Restarting now.\n");
+    //printf("Restarting now.\n");
     fflush(stdout);
     esp_restart();
 }
@@ -322,13 +322,13 @@ int bme_get_chipid(void) {
     uint8_t tmp;
 
     bme_i2c_read(I2C_NUM_0, &reg_id, &tmp, 1);
-    printf("Valor de CHIPID: %2X \n\n", tmp);
+    //printf("Valor de CHIPID: %2X \n\n", tmp);
 
     if (tmp == 0x61) {
-        printf("Chip BME688 reconocido.\n\n");
+        //printf("Chip BME688 reconocido.\n\n");
         return 0;
     } else {
-        printf("Chip BME688 no reconocido. \nCHIP ID: %2x\n\n", tmp);  // %2X
+        //printf("Chip BME688 no reconocido. \nCHIP ID: %2x\n\n", tmp);  // %2X
     }
 
     return 1;
@@ -340,10 +340,10 @@ int bme_softreset(void) {
     ret = bme_i2c_write(I2C_NUM_0, &reg_softreset, &val_softreset, 1);
     vTaskDelay(1000 / portTICK_PERIOD_MS);
     if (ret != ESP_OK) {
-        printf("\nError en softreset: %s \n", esp_err_to_name(ret));
+        //printf("\nError en softreset: %s \n", esp_err_to_name(ret));
         return 1;
     } else {
-        printf("\nSoftreset: OK\n\n");
+        //printf("\nSoftreset: OK\n\n");
     }
     return 0;
 }
@@ -580,7 +580,7 @@ void bme_get_mode(void) {
 
     tmp = tmp & 0x3;
 
-    printf("Valor de BME MODE: %2X \n\n", tmp);
+    //printf("Valor de BME MODE: %2X \n\n", tmp);
 }
 
 void bme_read_data(int window) {
@@ -590,20 +590,27 @@ void bme_read_data(int window) {
     uint8_t tmp;
     uint8_t prs;
 
-    // Inicializamos los arreglos que tendran los registros
-    float temp_data[window];
-    float press_data[window];
+    float rms_temp = 0;
+    float rms_press = 0;
 
     // Se obtienen los datos de temperatura y presion
+    //printf("Obteniendo las direcciones de los datos\n");
     uint8_t forced_temp_addr[] = {0x22, 0x23, 0x24};
     uint8_t forced_press_addr[] = {0x1F, 0x20, 0x21};
+
+    //printf("Comenzamos a leer la ventana\n");
     for (int i = 0; i < window; i++) {
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        //printf("Leyendo ventana %d\n", i);
         uint32_t temp_adc = 0;
         uint32_t press_adc = 0;
+
+        //printf("Forzando modo\n");
         bme_forced_mode();
         // Datasheet[41]
         // https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme688-ds000.pdf#page=41
 
+        //printf("Leyendo datos de tempratura\n");
         bme_i2c_read(I2C_NUM_0, &forced_temp_addr[0], &tmp, 1);
         temp_adc = temp_adc | tmp << 12;
         bme_i2c_read(I2C_NUM_0, &forced_temp_addr[1], &tmp, 1);
@@ -611,6 +618,7 @@ void bme_read_data(int window) {
         bme_i2c_read(I2C_NUM_0, &forced_temp_addr[2], &tmp, 1);
         temp_adc = temp_adc | (tmp & 0xf0) >> 4;
 
+        //printf("Leyendo datos de presion\n");
         bme_i2c_read(I2C_NUM_0, &forced_press_addr[0], &prs, 1);
         press_adc = press_adc | prs << 12;
         bme_i2c_read(I2C_NUM_0, &forced_press_addr[1], &prs, 1);
@@ -618,26 +626,45 @@ void bme_read_data(int window) {
         bme_i2c_read(I2C_NUM_0, &forced_press_addr[2], &prs, 1);
         press_adc = press_adc | (prs & 0xf0) >> 4;
 
+        //printf("Calculando datos de temperatura y presion\n");
         uint32_t temp = bme_temp_celsius(temp_adc);
         uint32_t press = bme_pressure(press_adc);
-        temp_data[i] = (float)temp / 100;
-        press_data[i] = (float)press / 100;
+
+        // Imprimimos los valores obtenidos en formato float
+        //printf("Temperatura: %f\n", (float)temp / 100);
+        //printf("Presion: %f\n", (float)press / 100);
+
+        //Calculamos el RMS de los datos
+        //printf("Calculando RMS de los datos\n");
+        float temp_f = (float)temp / 100;
+        float press_f = (float)press / 100;
+        rms_temp += (temp_f * temp_f) / window;
+        rms_press += (press_f * press_f) / window;
 
         // Enviamos los datos a la computadora
-        uart_write_bytes(UART_NUM_0, (const char *)temp, sizeof(float));
-        uart_write_bytes(UART_NUM_0, (const char *)press, sizeof(float));
+        //printf("Enviando datos de temperatura y presion\n");
+        char send_temp[20];
+        char send_press[20];
+        sprintf(send_temp, "%f", temp_f);
+        sprintf(send_press, "%f", press_f);
+        uart_write_bytes(UART_NUM, send_temp, strlen(send_temp));
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        uart_write_bytes(UART_NUM, send_press, strlen(send_press));
     }
+    vTaskDelay(pdMS_TO_TICKS(2000));
     // Calculamos el RMS de los datos
-    float temp_rms = calc_RMS(temp_data, window);
-    float press_rms = calc_RMS(press_data, window);
+    float final_rms_temp = sqrt(rms_temp);
+    float final_rms_press = sqrt(rms_press);
 
     // Enviamos los datos a la computadora
-    char send_tmp[20];
-    char send_press[20];
-    sprintf(send_tmp, "%f", temp_rms);
-    sprintf(send_press, "%f", press_rms);
-    uart_write_bytes(UART_NUM_0, send_tmp, sizeof(char)*20);
-    uart_write_bytes(UART_NUM_0, send_press, sizeof(char)*20);
+    //printf("Enviando RMS de los datos\n");
+    char send_tmp_rms[20];
+    char send_press_rms[20];
+    sprintf(send_tmp_rms, "%f", final_rms_temp);
+    sprintf(send_press_rms, "%f", final_rms_press);
+    uart_write_bytes(UART_NUM, send_tmp_rms, strlen(send_tmp_rms));
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    uart_write_bytes(UART_NUM, send_press_rms, strlen(send_press_rms));
 }
 
 void app_main(void) {
@@ -648,33 +675,46 @@ void app_main(void) {
     bme_forced_mode();
 
     uart_setup(); // Uart setup
+    set_window_nvs(10);
+    //printf("AL iniciar la NVS tiene: %d/n", get_window_nvs());
 
     // Avisamos que estamos listos para recibir datos
     uart_write_bytes(UART_NUM, "READY\0", 6);
 
     // Esperamos respuesta de la computadora
-    printf("Biggining read\n\n");
+    //printf("Start program\n\n");
     char dataResponse1[6];
+    // char *message = "Data received";
     while (1) {
         int rLen = serial_read(dataResponse1, 6);
         if (rLen > 0) {
             if (strcmp(dataResponse1, "BEGIN") == 0) {
                 uart_write_bytes(UART_NUM, "OK\0", 3);
+                // uart_write_bytes(UART_NUM, dataResponse1, 6);
+                // printf("%s: %s\n", message, dataResponse1);
+                //printf("Iniciando lectura\n");
                 // Obtenemos el tamaño de la ventana
                 int ventana = get_window_nvs();
-                printf("Comienza lectura\n\n");
+                //printf("Ventana obtenida\n");
                 bme_read_data(ventana);
+                //printf("Lectura finalizada\n\n");
             }
             else if (strcmp(dataResponse1, "END") == 0) {
                 uart_write_bytes(UART_NUM, "CLOSING\0", 3);
+                //printf("Reiniciando ESP\n\n");
                 restart_ESP();
+                //printf("ESP reiniciada\n\n");
+                break;
             }
             else {
+                //printf("Iniciando cambio de ventana\n");
                 // Si caemos aca es porque la computadora quiere que cambiemos el valor de la ventana, valor que fue enviado en forma de string
                 int ventana = atoi(dataResponse1);
+                //printf("Cambio de ventana a %d\n", ventana);
 
                 // Seteamos la ventana en la nvs
                 set_window_nvs(ventana);
+                //printf("Ventana seteada\n\n");
             }
         }
     }

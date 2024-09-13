@@ -21,20 +21,16 @@ def receive_response():
     response = ser.readline() #Esta funcion lee hasta que se topa con un salto de linea o el tiempo de espera se agota
     return response
 
-def receive_data(n):
+def receive_data():
     """ Funcion que recibe n floats de la ESP32 
     y los imprime en consola """
     respuesta_encriptada = receive_response()
-    data_floats = unpack(f"{2*n+2}f", respuesta_encriptada) #Aqui desencripto la informacion
-    data = {
-        "ventana_presion": list(data_floats[:n]), #Aqui voy a colocar la ventana de presion
-        "pRMS": data_floats[n], #Aqui voy a colocar el RMS de la ventana de presion
-        "ventana_temperatura": list(data_floats[n+1:2*n+1]),  #Aqui voy a colocar la ventana de temperatura
-        "tRMS": data_floats[2*n+1]  #Aqui voy a colocar el RMS de la ventana de temperatura
-    }
-    
-    print(f'Received data dictionary: {data}')
-    return data
+    print("respuesta encriptada: ")
+    print(respuesta_encriptada)
+    dato = unpack('>f', respuesta_encriptada) #Aqui desencripto la informacion
+    print("Dato:")
+    print(dato)
+    return dato
 
 def send_end_message():
     """ Funcion para enviar un mensaje de finalizacion a la ESP32 """
@@ -53,30 +49,42 @@ def terminar_conexion():
 
 # Funciones auxiliares
 def comenzar_lectura():
-    while True:
-        if ser.in_waiting > 0: #verifica si hay datos en el puerto serial
-            try:
-                message = receive_response()
-                if b"READY" in message:
-                    print("Mensaje de inicio recibido")
-                    break
-            except:
-                continue
-    
+
     print("Sending begin message")
     # Se envia el mensaje de inicio de comunicacion
     message = pack('6s','BEGIN\0'.encode()) #Minuto 30 del aux 2
     send_message(message)
 
-def leyendo(n):
-    # Se lee data por la conexion serial
-    listen_forever()
+    print("Llegue a comenzar lectura")
     while True:
-        print("python está esperando que le manden datitos")
         if ser.in_waiting > 0: #verifica si hay datos en el puerto serial
             try:
-                message = receive_data(n)
-                return message
+                message = receive_response()
+                if b"OK" in message:
+                    print("Mensaje de inicio recibido")
+                    break
+            except:
+                continue
+    
+    
+
+def leyendo(n):
+    #Creamos un arreglo para guardar los datos
+    print("LLEGUE A LEYENDO")
+    datos_recibidos = []
+    # Se lee data por la conexion serial
+    #listen_forever()
+    print("python está esperando que le manden datitos")
+    while True:
+        if ser.in_waiting > 0: #verifica si hay datos en el puerto serial
+            try:
+                dato_nuevo = receive_data()
+                datos_recibidos += [dato_nuevo]
+                print("El tamaño de la lista es: "+str(len(datos_recibidos)))
+                print("")
+                if len(datos_recibidos ==  2*n+2):
+                    print("LLEGUE AL IF")
+                    return datos_recibidos
             except:
                 continue
 
@@ -125,6 +133,15 @@ def listen_forever():
     while True:
         print(receive_response())
 
+while True:
+        if ser.in_waiting > 0: #verifica si hay datos en el puerto serial
+            try:
+                message = receive_response()
+                if b"READY" in message:
+                    print("Mensaje READY recibido")
+                    break
+            except:
+                continue
 while True:
     desplegar_menu_principal()
 
