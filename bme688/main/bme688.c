@@ -376,8 +376,36 @@ void bme_read_data(void) {
     }
 }
 
+// Setup of UART connections 0 and 1, and try to redirect logs to UART1 if asked
+static void uart_setup() {
+    uart_config_t uart_config = {
+        .baud_rate = 115200,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+    };
+
+    uart_param_config(UART_NUM_0, &uart_config);
+    uart_param_config(UART_NUM_1, &uart_config);
+    uart_driver_install(UART_NUM_0, BUF_SIZE * 2, 0, 0, NULL, 0);
+    uart_driver_install(UART_NUM_1, BUF_SIZE * 2, 0, 0, NULL, 0);
+
+    // Redirect ESP log to UART1
+    if (REDIRECT_LOGS) {
+        esp_log_set_vprintf(uart1_printf);
+    }
+}
+
+// Read UART_num for input with timeout of 1 sec
+int serial_read(char *buffer, int size){
+    int len = uart_read_bytes(UART_NUM, (uint8_t*)buffer, size, pdMS_TO_TICKS(1000));
+    return len;
+}
+
 // Setea la ventana en la nvs
-void set_window_nvs(int32_t window) {
+void set_window_nvs(int ventana) {
+    int32_t window = (int32_t)ventana;
     // Initialize NVS
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -415,7 +443,7 @@ void set_window_nvs(int32_t window) {
 }
 
 // Obtine el valor de la ventana en la nvs. Si no existe aún, retorna 20 y lo setea en 20
-int32_t get_window_nvs(void){
+int get_window_nvs(void){
     // Initialize NVS
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -452,12 +480,52 @@ int32_t get_window_nvs(void){
                 printf("Error (%s) reading!\n", esp_err_to_name(err));
         }
         // Close
+        int ventana = (int)window;
         nvs_close(my_handle);
+        return ventana;
     }
 }
 
+// Calcula la RMS de un array de floats
+float calc_RMS(float[] arr, int ventana){
+    float raiz = 0;
+    float sum = 0;
+
+    for(int i = 0; i++; i < ventana){
+        sum += arr[i] * arr[i];
+    }
+
+    raiz = sqrt(sum/(float)ventana);
+    return raiz;
+}
+
+// reinicia la ESP y termina la conexión
+void restart_ESP(){
+    // Reiniciar la ESP y terminar conexión
+    for (int i = 10; i >= 0; i--) {
+        printf("Restarting in %d seconds...\n", i);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+    printf("Restarting now.\n");
+    fflush(stdout);
+    esp_restart();
+}
 
 void app_main(void) {
+
+    uart_setup(); // Uart setup
+
+    dataResponse1[6];
+    printf("Beginning initialization... \n");
+    while (1) {
+        int rLen = serial_read(dataResponse1, 6);
+        if (rLen > 0) {
+            if (strcmp(dataResponse1, "BEGIN") == 0) {
+                uart_write_bytes(UART_NUM, "OK\0", 3);
+                break;
+            }
+        }
+    }
     ESP_ERROR_CHECK(sensor_init());
     bme_get_chipid();
     bme_softreset();
@@ -465,4 +533,10 @@ void app_main(void) {
     bme_forced_mode();
     printf("Comienza lectura\n\n");
     bme_read_data();
+
+    restart_ESP()
 }
+
+
+
+
