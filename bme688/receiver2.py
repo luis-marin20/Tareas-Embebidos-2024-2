@@ -50,6 +50,22 @@ def terminar_conexion():
     ser.close()
 
 # Funciones auxiliares
+def parsear_datos(datos, n):
+    ventana_temperatura = datos[:2*n:2]  
+    ventana_presion = datos[1:2*n:2]    
+    
+    tRMS = datos[-2]  
+    pRMS = datos[-1] 
+    
+    data = {
+        "ventana_temperatura": ventana_temperatura,
+        "ventana_presion": ventana_presion,
+        "tRMS": tRMS,
+        "pRMS": pRMS
+    }
+    return data
+
+
 def comenzar_lectura():
 
     print("Sending begin message")
@@ -86,12 +102,7 @@ def leyendo(n):
                 print("")
                 if len(datos_recibidos)==  2*n+2:
                     print("LLEGUE AL IF")
-                    data = {
-                        "ventana_presion": list(datos_recibidos[:n]), #Aqui voy a colocar la ventana de presion
-                        "pRMS": datos_recibidos[n], #Aqui voy a colocar el RMS de la ventana de presion
-                        "ventana_temperatura": list(datos_recibidos[n:2*n+1]),  #Aqui voy a colocar la ventana de temperatura
-                        "tRMS": datos_recibidos[2*n+1]  #Aqui voy a colocar el RMS de la ventana de temperatura
-                    }
+                    data = parsear_datos(datos_recibidos,n)
                     return data
             except:
                 continue
