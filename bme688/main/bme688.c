@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -133,7 +134,7 @@ int serial_read(char *buffer, int size){
 
 // Setea la ventana en la nvs
 void set_window_nvs(int ventana) {
-    int32_t window = (int32_t)ventana;
+    ventana = (int32_t)ventana;
     // Initialize NVS
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -145,25 +146,44 @@ void set_window_nvs(int ventana) {
     ESP_ERROR_CHECK( err );
 
     // Open
-    //printf("\n");
-    //printf("Opening Non-Volatile Storage (NVS) handle... ");
+    printf("\n");
+    printf("Opening Non-Volatile Storage (NVS) handle... ");
     nvs_handle_t my_handle;
     err = nvs_open("storage", NVS_READWRITE, &my_handle);
     if (err != ESP_OK) {
-        //printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
+        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
     } else {
-        //printf("Done\n");
+        printf("Done\n");
 
+        // Read
+        printf("Reading window from NVS ... ");
+        int32_t window = 20; // value will default to 20, if not set yet in NVS
+        err = nvs_get_i32(my_handle, "window", &window);
+        switch (err) {
+            case ESP_OK:
+                printf("Done\n");
+                printf("window = %" PRIu32 "\n", window);
+                break;
+            case ESP_ERR_NVS_NOT_FOUND:
+                printf("The value is not initialized yet!\n");
+                break;
+            default :
+                printf("Error (%s) reading!\n", esp_err_to_name(err));
+        }
+
+        // Write
+        printf("Updating restart counter in NVS ... ");
+        window = ventana;
         err = nvs_set_i32(my_handle, "window", window);
-        //printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
 
         // Commit written value.
         // After setting any values, nvs_commit() must be called to ensure changes are written
         // to flash storage. Implementations may write to storage at other times,
         // but this is not guaranteed.
-        //printf("Committing updates in NVS ... ");
+        printf("Committing updates in NVS ... ");
         err = nvs_commit(my_handle);
-        //printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
 
         // Close
         nvs_close(my_handle);
@@ -183,35 +203,35 @@ int get_window_nvs(void){
     ESP_ERROR_CHECK( err );
 
     // Open
-    //printf("\n");
-    //printf("Opening Non-Volatile Storage (NVS) handle... ");
+    printf("\n");
+    printf("Opening Non-Volatile Storage (NVS) handle... ");
     nvs_handle_t my_handle;
     err = nvs_open("storage", NVS_READWRITE, &my_handle);
     if (err != ESP_OK) {
-        //printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
+        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
         return -1;
     } else {
-        //printf("Done\n");
+        printf("Done\n");
 
         // Read
-        //printf("Reading window from NVS ... ");
-        int32_t window = 10; // value will default to 20, if not set yet in NVS
+        printf("Reading window from NVS ... ");
+        int32_t window = 20; // value will default to 20, if not set yet in NVS
         err = nvs_get_i32(my_handle, "window", &window);
         switch (err) {
             case ESP_OK:
-                //printf("Done\n");
-                //printf("window = %" PRIu32 "\n", window);
+                printf("Done\n");
+                printf("window = %" PRIu32 "\n", window);
                 break;
             case ESP_ERR_NVS_NOT_FOUND:
-                //printf("The window value is not initialized yet!\n");
+                printf("The value is not initialized yet!\n");
                 break;
             default :
-                //printf("Error (%s) reading!\n", esp_err_to_name(err));
+                printf("Error (%s) reading!\n", esp_err_to_name(err));
         }
+
         // Close
-        int ventana = (int)window;
         nvs_close(my_handle);
-        return ventana;
+        return window;
     }
 }
 
@@ -232,10 +252,10 @@ float calc_RMS(float *arr, int ventana){
 void restart_ESP(){
     // Reiniciar la ESP y terminar conexión
     for (int i = 10; i >= 0; i--) {
-        //printf("Restarting in %d seconds...\n", i);
+        printf("Restarting in %d seconds...\n", i);
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
-    //printf("Restarting now.\n");
+    printf("Restarting now.\n");
     fflush(stdout);
     esp_restart();
 }
@@ -454,7 +474,10 @@ int bme_check_forced_mode(void) {
     return (tmp == 0b001 && tmp2 == 0x59 && tmp3 == 0x00 && tmp4 == 0b100000 && tmp5 == 0b01010101);
 }
 
-int bme_temp_celsius(uint32_t temp_adc) {
+int *bme_calculate(uint32_t temp_adc, uint32_t press_adc) {
+    // Arreglo para guardar los datos, la pedimos con malloc
+    int *data = (int *)malloc(2 * sizeof(int));
+
     // Datasheet[23]
     // https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme688-ds000.pdf#page=23
 
@@ -466,33 +489,31 @@ int bme_temp_celsius(uint32_t temp_adc) {
     uint16_t par_t2;
     uint16_t par_t3;
 
-    uint8_t par[5];
-    bme_i2c_read(I2C_NUM_0, &addr_par_t1_lsb, par, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_t1_msb, par + 1, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_t2_lsb, par + 2, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_t2_msb, par + 3, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_t3_lsb, par + 4, 1);
+    uint8_t par_t[5];
+    bme_i2c_read(I2C_NUM_0, &addr_par_t1_lsb, par_t, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_t1_msb, par_t + 1, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_t2_lsb, par_t + 2, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_t2_msb, par_t + 3, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_t3_lsb, par_t + 4, 1);
 
-    par_t1 = (par[1] << 8) | par[0];
-    par_t2 = (par[3] << 8) | par[2];
-    par_t3 = par[4];
+    par_t1 = (par_t[1] << 8) | par_t[0];
+    par_t2 = (par_t[3] << 8) | par_t[2];
+    par_t3 = par_t[4];
 
-    int64_t var1;
-    int64_t var2;
-    int64_t var3;
+    int64_t var1_t;
+    int64_t var2_t;
+    int64_t var3_t;
     int t_fine;
     int calc_temp;
 
-    var1 = ((int32_t)temp_adc >> 3) - ((int32_t)par_t1 << 1);
-    var2 = (var1 * (int32_t)par_t2) >> 11;
-    var3 = ((var1 >> 1) * (var1 >> 1)) >> 12;
-    var3 = ((var3) * ((int32_t)par_t3 << 4)) >> 14;
-    t_fine = (int32_t)(var2 + var3);
+    var1_t = ((int32_t)temp_adc >> 3) - ((int32_t)par_t1 << 1);
+    var2_t = (var1_t * (int32_t)par_t2) >> 11;
+    var3_t = ((var1_t >> 1) * (var1_t >> 1)) >> 12;
+    var3_t = ((var3_t) * ((int32_t)par_t3 << 4)) >> 14;
+    t_fine = (int32_t)(var2_t + var3_t);
     calc_temp = (((t_fine * 5) + 128) >> 8);
-    return calc_temp;
-}
+    data[0] = calc_temp;
 
-int bme_pressure(uint32_t press_adc) {
     // Datasheet[24]
     // https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme688-ds000.pdf#page=24
 
@@ -518,58 +539,60 @@ int bme_pressure(uint32_t press_adc) {
     uint16_t par_p9;
     uint16_t par_p10;
 
-    uint8_t par[16];
-    bme_i2c_read(I2C_NUM_0, &addr_par_p1_lsb, par, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_p1_msb, par + 1, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_p2_lsb, par + 2, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_p2_msb, par + 3, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_p3_lsb, par + 4, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_p4_lsb, par + 5, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_p4_msb, par + 6, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_p5_lsb, par + 7, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_p5_msb, par + 8, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_p6_lsb, par + 9, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_p7_lsb, par + 10, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_p8_lsb, par + 11, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_p8_msb, par + 12, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_p9_lsb, par + 13, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_p9_msb, par + 14, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_p10_lsb, par + 15, 1);
+    uint8_t par_p[16];
+    bme_i2c_read(I2C_NUM_0, &addr_par_p1_lsb, par_p, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_p1_msb, par_p + 1, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_p2_lsb, par_p + 2, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_p2_msb, par_p + 3, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_p3_lsb, par_p + 4, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_p4_lsb, par_p + 5, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_p4_msb, par_p + 6, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_p5_lsb, par_p + 7, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_p5_msb, par_p + 8, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_p6_lsb, par_p + 9, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_p7_lsb, par_p + 10, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_p8_lsb, par_p + 11, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_p8_msb, par_p + 12, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_p9_lsb, par_p + 13, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_p9_msb, par_p + 14, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_p10_lsb, par_p + 15, 1);
 
-    par_p1 = (par[1] << 8) | par[0];
-    par_p2 = (par[3] << 8) | par[2];
-    par_p3 = par[4];
-    par_p4 = (par[6] << 8) | par[5];
-    par_p5 = (par[8] << 8) | par[7];
-    par_p6 = par[9];
-    par_p7 = par[10];
-    par_p8 = (par[12] << 8) | par[11];
-    par_p9 = (par[14] << 8) | par[13];
-    par_p10 = par[15];
+    par_p1 = (par_p[1] << 8) | par_p[0];
+    par_p2 = (par_p[3] << 8) | par_p[2];
+    par_p3 = par_p[4];
+    par_p4 = (par_p[6] << 8) | par_p[5];
+    par_p5 = (par_p[8] << 8) | par_p[7];
+    par_p6 = par_p[9];
+    par_p7 = par_p[10];
+    par_p8 = (par_p[12] << 8) | par_p[11];
+    par_p9 = (par_p[14] << 8) | par_p[13];
+    par_p10 = par_p[15];
 
-    int64_t var1;
-    int64_t var2;
-    int64_t var3;
+    int64_t var1_p;
+    int64_t var2_p;
+    int64_t var3_p;
 
     int press_comp;
 
-    var1 = ((int32_t)press_adc >> 1) - 64000;
-    var2 = ((((var1 >> 2) * (var1 >> 2)) >> 11) * (int32_t)par_p6) >> 2; 
-    var2 = var2 + ((var1 * (int32_t)par_p5) << 1); 
-    var2 = (var2 >> 2) + ((int32_t)par_p4 << 16); 
-    var1 = (((((var1 >> 2) * (var1 >> 2)) >> 13) * ((int32_t)par_p3 << 5)) >> 3) + (((int32_t)par_p2 * var1) >> 1); 
-    var1 = var1 >> 18; 
-    var1 = ((32768 + var1) * (int32_t)par_p1) >> 15; 
+    var1_p = ((int32_t)t_fine >> 1) - 64000;
+    var2_p = ((((var1_p >> 2) * (var1_p >> 2)) >> 11) * (int32_t)par_p6) >> 2; 
+    var2_p = var2_p + ((var1_p * (int32_t)par_p5) << 1); 
+    var2_p = (var2_p >> 2) + ((int32_t)par_p4 << 16); 
+    var1_p = (((((var1_p >> 2) * (var1_p >> 2)) >> 13) * ((int32_t)par_p3 << 5)) >> 3) + (((int32_t)par_p2 * var1_p) >> 1); 
+    var1_p = var1_p >> 18; 
+    var1_p = ((32768 + var1_p) * (int32_t)par_p1) >> 15; 
     press_comp = 1048576 - (int32_t)press_adc; 
-    press_comp = (uint32_t)((press_comp - (var2 >> 12)) * ((uint32_t)3125)); 
-    if (press_comp >= (1 << 30)) press_comp = ((press_comp / (uint32_t)var1) << 1); 
-    else press_comp = ((press_comp << 1) / (uint32_t)var1); 
-    var1 = ((int32_t)par_p9 * (int32_t)(((press_comp >> 3) * (press_comp >> 3)) >> 13)) >> 12; 
-    var2 = ((int32_t)(press_comp >> 2) * (int32_t)par_p8) >> 13; 
-    var3 = ((int32_t)(press_comp >> 8) * (int32_t)(press_comp >> 8) * (int32_t)(press_comp >> 8) * (int32_t)par_p10) >> 17; 
-    press_comp = (int32_t)(press_comp) + ((var1 + var2 + var3 + ((int32_t)par_p7 << 7)) >> 4);
+    press_comp = (uint32_t)((press_comp - (var2_p >> 12)) * ((uint32_t)3125)); 
+    if (press_comp >= (1 << 30)) press_comp = ((press_comp / (uint32_t)var1_p) << 1); 
+    else press_comp = ((press_comp << 1) / (uint32_t)var1_p); 
+    var1_p = ((int32_t)par_p9 * (int32_t)(((press_comp >> 3) * (press_comp >> 3)) >> 13)) >> 12; 
+    var2_p = ((int32_t)(press_comp >> 2) * (int32_t)par_p8) >> 13; 
+    var3_p = ((int32_t)(press_comp >> 8) * (int32_t)(press_comp >> 8) * (int32_t)(press_comp >> 8) * (int32_t)par_p10) >> 17; 
+    press_comp = (int32_t)(press_comp) + ((var1_p + var2_p + var3_p + ((int32_t)par_p7 << 7)) >> 4);
 
-    return press_comp;
+    data[1] = press_comp;
+
+    return data;
 }
 
 void bme_get_mode(void) {
@@ -583,7 +606,7 @@ void bme_get_mode(void) {
     //printf("Valor de BME MODE: %2X \n\n", tmp);
 }
 
-void bme_read_data(int window) {
+void bme_read_data(int window, int time) {
     // Datasheet[23:41]
     // https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme688-ds000.pdf#page=23
 
@@ -600,7 +623,7 @@ void bme_read_data(int window) {
 
     //printf("Comenzamos a leer la ventana\n");
     for (int i = 0; i < window; i++) {
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        vTaskDelay(pdMS_TO_TICKS(time));
         //printf("Leyendo ventana %d\n", i);
         uint32_t temp_adc = 0;
         uint32_t press_adc = 0;
@@ -627,12 +650,10 @@ void bme_read_data(int window) {
         press_adc = press_adc | (prs & 0xf0) >> 4;
 
         //printf("Calculando datos de temperatura y presion\n");
-        uint32_t temp = bme_temp_celsius(temp_adc);
-        uint32_t press = bme_pressure(press_adc);
-
-        // Imprimimos los valores obtenidos en formato float
-        //printf("Temperatura: %f\n", (float)temp / 100);
-        //printf("Presion: %f\n", (float)press / 100);
+        int *data = bme_calculate(temp_adc, press_adc);
+        uint32_t temp = data[0];
+        uint32_t press = data[1];
+        free(data);
 
         //Calculamos el RMS de los datos
         //printf("Calculando RMS de los datos\n");
@@ -648,10 +669,9 @@ void bme_read_data(int window) {
         sprintf(send_temp, "%f", temp_f);
         sprintf(send_press, "%f", press_f);
         uart_write_bytes(UART_NUM, send_temp, strlen(send_temp));
-        vTaskDelay(pdMS_TO_TICKS(2000));
         uart_write_bytes(UART_NUM, send_press, strlen(send_press));
     }
-    vTaskDelay(pdMS_TO_TICKS(2000));
+    vTaskDelay(pdMS_TO_TICKS(time+2000));
     // Calculamos el RMS de los datos
     float final_rms_temp = sqrt(rms_temp);
     float final_rms_press = sqrt(rms_press);
@@ -663,7 +683,6 @@ void bme_read_data(int window) {
     sprintf(send_tmp_rms, "%f", final_rms_temp);
     sprintf(send_press_rms, "%f", final_rms_press);
     uart_write_bytes(UART_NUM, send_tmp_rms, strlen(send_tmp_rms));
-    vTaskDelay(pdMS_TO_TICKS(2000));
     uart_write_bytes(UART_NUM, send_press_rms, strlen(send_press_rms));
 }
 
@@ -675,11 +694,18 @@ void app_main(void) {
     bme_forced_mode();
 
     uart_setup(); // Uart setup
-    set_window_nvs(10);
-    //printf("AL iniciar la NVS tiene: %d/n", get_window_nvs());
 
-    // Avisamos que estamos listos para recibir datos
-    uart_write_bytes(UART_NUM, "READY\0", 6);
+    // Esperamos a que la computadora nos diga que comencemos
+    char dataResponse[6];
+    while (1) {
+        int rLen = serial_read(dataResponse, 6);
+        if (rLen > 0) {
+            if (strcmp(dataResponse, "START") == 0) {
+                uart_write_bytes(UART_NUM, "READY\0", 6);
+                break;
+            }
+        }
+    }
 
     // Esperamos respuesta de la computadora
     //printf("Start program\n\n");
@@ -690,18 +716,19 @@ void app_main(void) {
         if (rLen > 0) {
             if (strcmp(dataResponse1, "BEGIN") == 0) {
                 uart_write_bytes(UART_NUM, "OK\0", 3);
-                // uart_write_bytes(UART_NUM, dataResponse1, 6);
                 // printf("%s: %s\n", message, dataResponse1);
                 //printf("Iniciando lectura\n");
                 // Obtenemos el tamaño de la ventana
                 int ventana = get_window_nvs();
-                //printf("Ventana obtenida\n");
-                bme_read_data(ventana);
+                // printf("Ventana obtenida: %d\n", ventana);
+                // uart_write_bytes(UART_NUM, (char *)ventana, 6);
+                bme_read_data(ventana, 1000);
                 //printf("Lectura finalizada\n\n");
             }
             else if (strcmp(dataResponse1, "END") == 0) {
-                uart_write_bytes(UART_NUM, "CLOSING\0", 3);
                 //printf("Reiniciando ESP\n\n");
+                uart_write_bytes(UART_NUM, "CLOSED\0", 7);
+                set_window_nvs(20);
                 restart_ESP();
                 //printf("ESP reiniciada\n\n");
                 break;

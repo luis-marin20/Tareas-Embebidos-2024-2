@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 # Se configura el puerto y el BAUD_Rate
 PORT = 'COM4'  # Esto depende del sistema operativo
 BAUD_RATE = 115200  # Debe coincidir con la configuracion de la ESP32
+TIME = 2 # Tiempo de espera entre una medicion y otra
 
 window_size = 10
 
@@ -25,14 +26,13 @@ def receive_data():
     """ Funcion que recibe n floats de la ESP32 
     y los imprime en consola """
     respuesta_encriptada = receive_response()
-    print("respuesta encriptada: ")
+    # Separamos la respuesta en dos partes
     print(respuesta_encriptada)
-    #dato = unpack('>f', respuesta_encriptada) #Aqui desencripto la informacion
-    dato_str = respuesta_encriptada.decode('utf-8') #Aqui desencripto la informacion
-    dato = float(dato_str)
-    print("Dato:")
-    print(dato)
-    return dato
+    dato_str1 = respuesta_encriptada[:9].decode('utf-8')
+    dato_str2 = respuesta_encriptada[9:].decode('utf-8')
+    temp = float(dato_str1)
+    press = float(dato_str2)
+    return temp, press
 
 def send_end_message():
     """ Funcion para enviar un mensaje de finalizacion a la ESP32 """
@@ -47,39 +47,31 @@ def cambiar_ventana(new_size):
 def terminar_conexion():
     # Se envia el mensaje de termino de comunicacion
     send_end_message()
+    # Esperamos que la ESP32 responda
+    while True:
+        if ser.in_waiting > 0:
+            try:
+                message = receive_response()
+                print(message)
+                if b"CLOSED" in message:
+                    break
+            except:
+                continue
     ser.close()
 
 # Funciones auxiliares
-def parsear_datos(datos, n):
-    ventana_temperatura = datos[:2*n:2]  
-    ventana_presion = datos[1:2*n:2]    
-    
-    tRMS = datos[-2]  
-    pRMS = datos[-1] 
-    
-    data = {
-        "ventana_temperatura": ventana_temperatura,
-        "ventana_presion": ventana_presion,
-        "tRMS": tRMS,
-        "pRMS": pRMS
-    }
-    return data
-
 
 def comenzar_lectura():
 
-    print("Sending begin message")
     # Se envia el mensaje de inicio de comunicacion
     message = pack('6s','BEGIN\0'.encode()) #Minuto 30 del aux 2
     send_message(message)
 
-    print("Llegue a comenzar lectura")
     while True:
         if ser.in_waiting > 0: #verifica si hay datos en el puerto serial
             try:
                 message = receive_response()
                 if b"OK" in message:
-                    print("Mensaje de inicio recibido")
                     break
             except:
                 continue
@@ -88,51 +80,55 @@ def comenzar_lectura():
 
 def leyendo(n):
     #Creamos un arreglo para guardar los datos
-    print("LLEGUE A LEYENDO")
-    datos_recibidos = []
+    temperatura = []
+    presion = []
     # Se lee data por la conexion serial
     #listen_forever()
-    print("python está esperando que le manden datitos")
     while True:
         if ser.in_waiting > 0: #verifica si hay datos en el puerto serial
             try:
-                dato_nuevo = receive_data()
-                datos_recibidos += [dato_nuevo]
-                print("El tamaño de la lista es: "+str(len(datos_recibidos)))
-                print("")
-                if len(datos_recibidos)==  2*n+2:
-                    print("LLEGUE AL IF")
-                    data = parsear_datos(datos_recibidos,n)
+                temp, press = receive_data()
+                temperatura += [temp]
+                presion += [press]
+                if len(temperatura)+len(presion)==  2*n+2:
+                    data = {
+                        "ventana_temperatura": temperatura[:-1],
+                        "ventana_presion": presion[:-1],
+                        "tRMS": temperatura[-1],
+                        "pRMS": presion[-1]
+                    }
                     return data
             except:
                 continue
 
-def graficar(lista,variable):
-    x = list(range(len(lista)))
+def graficar(lista,variable, title, filename):
+    plt.clf()
+    x = [i*TIME for i in range(len(lista))]
     plt.plot(x, lista, marker='o', linestyle='-', color='b', label='Datos')
-    plt.xlabel('Mediciones')
+    plt.xlabel('Tiempo (s)')
     plt.ylabel(variable)
-    plt.title('Gráfico de Dispersión con Línea')
+    plt.title(title)
     plt.legend()
-    plt.show()
+    plt.savefig(filename)
 
 def mostrar_datos(datos):
     presiones = datos["ventana_presion"]
     temperaturas = datos["ventana_temperatura"]
     pRMS = datos["pRMS"]
     tRMS = datos["tRMS"]
-    graficar(presiones, "Presión")
-    print(presiones)
-    print(f"El RMS fue de {pRMS}")
-    print(temperaturas)
-    graficar(temperaturas, "Temperatura")
+    graficar(temperaturas, "Temperatura (°C)", "Temperatura", "temperatura.png")
+    print("Datos temperatura: ",temperaturas)
     print(f"El RMS fue de {tRMS}")
+    graficar(presiones, "Presión (Pa)", "Presion", "presion.png")
+    print("Datos presion: ",presiones)
+    print(f"El RMS fue de {pRMS}")
 
 
 def solicitar_ventana(n):
+    print("Indicandole al ESP32 que comience a leer")
     comenzar_lectura()
-    datos = leyendo(n)
-    return datos
+    print("Recibiendo datos...")
+    return leyendo(n)
 
 
 
@@ -152,15 +148,16 @@ def listen_forever():
     while True:
         print(receive_response())
 
+send_message(pack('6s','START\0'.encode()))
 while True:
-        if ser.in_waiting > 0: #verifica si hay datos en el puerto serial
-            try:
-                message = receive_response()
-                if b"READY" in message:
-                    print("Mensaje READY recibido")
-                    break
-            except:
-                continue
+    if ser.in_waiting > 0: #verifica si hay datos en el puerto serial
+        try:
+            message = receive_response()
+            if b"READY" in message:
+                print("Mensaje READY recibido")
+                break
+        except:
+            continue
 while True:
     desplegar_menu_principal()
 

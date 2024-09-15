@@ -53,3 +53,4 @@ dkms.conf
 
 /bme688/build
 .vscode
+*.png
