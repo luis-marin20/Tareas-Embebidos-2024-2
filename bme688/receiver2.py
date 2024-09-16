@@ -7,8 +7,6 @@ PORT = 'COM4'  # Esto depende del sistema operativo
 BAUD_RATE = 115200  # Debe coincidir con la configuracion de la ESP32
 TIME = 1 # Tiempo de espera entre una medicion y otra
 
-window_size = 20
-
 # Se abre la conexion serial
 ser = serial.Serial(PORT, BAUD_RATE, timeout = 1)
 
@@ -26,8 +24,9 @@ def receive_data():
     """ Funcion que recibe n floats de la ESP32 
     y los imprime en consola """
     respuesta_encriptada = receive_response()
+    if b'FINISH' in respuesta_encriptada:
+        return None, None
     # Separamos la respuesta en dos partes
-    # print(respuesta_encriptada)
     dato_str1 = respuesta_encriptada[:9].decode('utf-8')
     dato_str2 = respuesta_encriptada[9:].decode('utf-8')
     temp = float(dato_str1)
@@ -78,7 +77,7 @@ def comenzar_lectura():
     
     
 
-def leyendo(n):
+def leyendo():
     #Creamos un arreglo para guardar los datos
     temperatura = []
     presion = []
@@ -88,9 +87,7 @@ def leyendo(n):
         if ser.in_waiting > 0: #verifica si hay datos en el puerto serial
             try:
                 temp, press = receive_data()
-                temperatura += [temp]
-                presion += [press]
-                if len(temperatura)+len(presion)==  2*n+2:
+                if temp is None:
                     data = {
                         "ventana_temperatura": temperatura[:-1],
                         "ventana_presion": presion[:-1],
@@ -98,6 +95,8 @@ def leyendo(n):
                         "pRMS": presion[-1]
                     }
                     return data
+                temperatura += [temp]
+                presion += [press]
             except:
                 continue
 
@@ -117,6 +116,7 @@ def mostrar_datos(datos):
     pRMS = datos["pRMS"]
     tRMS = datos["tRMS"]
     graficar(temperaturas, "Temperatura (°C)", "Temperatura", "temperatura.png")
+    print("Tamaño de la ventana: ", len(temperaturas))
     print("Datos temperatura: ",temperaturas)
     print(f"El RMS fue de {tRMS}")
     graficar(presiones, "Presión (Pa)", "Presion", "presion.png")
@@ -124,11 +124,11 @@ def mostrar_datos(datos):
     print(f"El RMS fue de {pRMS}")
 
 
-def solicitar_ventana(n):
+def solicitar_ventana():
     print("Indicandole al ESP32 que comience a leer")
     comenzar_lectura()
     print("Recibiendo datos...")
-    return leyendo(n)
+    return leyendo()
 
 
 
@@ -168,7 +168,7 @@ while True:
         """
         Solicitamos una ventana y graficamos los datos
         """
-        datos = solicitar_ventana(window_size)
+        datos = solicitar_ventana()
         mostrar_datos(datos)
 
     elif respuesta == "2":
@@ -179,7 +179,6 @@ while True:
             Cambiar el numero de ventana y enviar mensaje para que ellos lo cambien
             """
             cambiar_ventana(respuesta2) #Solicitamos al ESP32 que cambie el tamaño de la ventana
-            window_size = respuesta2 #Cambiamos el tamaño de la ventana para nosotros
 
 
     elif respuesta == "3":

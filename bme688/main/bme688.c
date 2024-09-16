@@ -673,17 +673,19 @@ void bme_read_data(int window, int time) {
     }
     vTaskDelay(pdMS_TO_TICKS(time+2000));
     // Calculamos el RMS de los datos
+    printf("Calculando RMS de los datos\n");
     float final_rms_temp = sqrt(rms_temp);
     float final_rms_press = sqrt(rms_press);
 
     // Enviamos los datos a la computadora
-    //printf("Enviando RMS de los datos\n");
+    printf("Enviando RMS de los datos\n");
     char send_tmp_rms[20];
     char send_press_rms[20];
     sprintf(send_tmp_rms, "%f", final_rms_temp);
     sprintf(send_press_rms, "%f", final_rms_press);
     uart_write_bytes(UART_NUM, send_tmp_rms, strlen(send_tmp_rms));
     uart_write_bytes(UART_NUM, send_press_rms, strlen(send_press_rms));
+    vTaskDelay(pdMS_TO_TICKS(time+2000));
 }
 
 void app_main(void) {
@@ -695,7 +697,6 @@ void app_main(void) {
 
     uart_setup(); // Uart setup
 
-    set_window_nvs(20);
     // Avisamos que estamos listos para recibir datos
     // Nos quedamos esperando a que la computadora nos avise que iniciemos el programa
     char dataResponse[6];
@@ -725,6 +726,7 @@ void app_main(void) {
                 // printf("Ventana obtenida: %d\n", ventana);
                 // uart_write_bytes(UART_NUM, (char *)ventana, 6);
                 bme_read_data(ventana, 1000);
+                uart_write_bytes(UART_NUM, "FINISH\0", 7);
                 //printf("Lectura finalizada\n\n");
             }
             else if (strcmp(dataResponse1, "END") == 0) {
