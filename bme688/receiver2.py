@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 # Se configura el puerto y el BAUD_Rate
 PORT = 'COM4'  # Esto depende del sistema operativo
 BAUD_RATE = 115200  # Debe coincidir con la configuracion de la ESP32
-TIME = 2 # Tiempo de espera entre una medicion y otra
+TIME = 1 # Tiempo de espera entre una medicion y otra
 
-window_size = 10
+window_size = 20
 
 # Se abre la conexion serial
 ser = serial.Serial(PORT, BAUD_RATE, timeout = 1)
@@ -27,7 +27,7 @@ def receive_data():
     y los imprime en consola """
     respuesta_encriptada = receive_response()
     # Separamos la respuesta en dos partes
-    print(respuesta_encriptada)
+    # print(respuesta_encriptada)
     dato_str1 = respuesta_encriptada[:9].decode('utf-8')
     dato_str2 = respuesta_encriptada[9:].decode('utf-8')
     temp = float(dato_str1)
@@ -40,7 +40,7 @@ def send_end_message():
     ser.write(end_message)
 
 def cambiar_ventana(new_size):
-    largo_mensaje = 7 + len(str(new_size))
+    largo_mensaje = len(str(new_size))
     change_message = pack(f'{largo_mensaje}s', f'{new_size}\0'.encode()) #pack('9s', '6\0')
     ser.write(change_message)
 
@@ -52,7 +52,7 @@ def terminar_conexion():
         if ser.in_waiting > 0:
             try:
                 message = receive_response()
-                print(message)
+                # print(message)
                 if b"CLOSED" in message:
                     break
             except:
@@ -148,13 +148,13 @@ def listen_forever():
     while True:
         print(receive_response())
 
-send_message(pack('6s','START\0'.encode()))
 while True:
     if ser.in_waiting > 0: #verifica si hay datos en el puerto serial
         try:
             message = receive_response()
             if b"READY" in message:
                 print("Mensaje READY recibido")
+                send_message("START\0".encode())
                 break
         except:
             continue

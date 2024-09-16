@@ -695,13 +695,15 @@ void app_main(void) {
 
     uart_setup(); // Uart setup
 
-    // Esperamos a que la computadora nos diga que comencemos
+    set_window_nvs(20);
+    // Avisamos que estamos listos para recibir datos
+    // Nos quedamos esperando a que la computadora nos avise que iniciemos el programa
     char dataResponse[6];
-    while (1) {
+    while(1){
+        uart_write_bytes(UART_NUM, "READY\0", 6);
         int rLen = serial_read(dataResponse, 6);
         if (rLen > 0) {
             if (strcmp(dataResponse, "START") == 0) {
-                uart_write_bytes(UART_NUM, "READY\0", 6);
                 break;
             }
         }
@@ -728,7 +730,6 @@ void app_main(void) {
             else if (strcmp(dataResponse1, "END") == 0) {
                 //printf("Reiniciando ESP\n\n");
                 uart_write_bytes(UART_NUM, "CLOSED\0", 7);
-                set_window_nvs(20);
                 restart_ESP();
                 //printf("ESP reiniciada\n\n");
                 break;
