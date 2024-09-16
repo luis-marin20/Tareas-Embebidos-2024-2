@@ -5,8 +5,7 @@ import matplotlib.pyplot as plt
 # Se configura el puerto y el BAUD_Rate
 PORT = 'COM4'  # Esto depende del sistema operativo
 BAUD_RATE = 115200  # Debe coincidir con la configuracion de la ESP32
-
-window_size = 10
+TIME = 1 # Tiempo de espera entre una medicion y otra
 
 # Se abre la conexion serial
 ser = serial.Serial(PORT, BAUD_RATE, timeout = 1)
@@ -21,20 +20,19 @@ def receive_response():
     response = ser.readline() #Esta funcion lee hasta que se topa con un salto de linea o el tiempo de espera se agota
     return response
 
-def receive_data(n):
+def receive_data():
     """ Funcion que recibe n floats de la ESP32 
     y los imprime en consola """
     respuesta_encriptada = receive_response()
-    data_floats = unpack(f"{2*n+2}f", respuesta_encriptada) #Aqui desencripto la informacion
-    data = {
-        "ventana_presion": list(data_floats[:n]), #Aqui voy a colocar la ventana de presion
-        "pRMS": data_floats[n], #Aqui voy a colocar el RMS de la ventana de presion
-        "ventana_temperatura": list(data_floats[n+1:2*n+1]),  #Aqui voy a colocar la ventana de temperatura
-        "tRMS": data_floats[2*n+1]  #Aqui voy a colocar el RMS de la ventana de temperatura
-    }
-    
-    print(f'Received data dictionary: {data}')
-    return data
+    # print(respuesta_encriptada)
+    if b'FINISH' in respuesta_encriptada:
+        return None, None
+    # Separamos la respuesta en dos partes
+    dato_str1 = respuesta_encriptada[:9].decode('utf-8')
+    dato_str2 = respuesta_encriptada[9:].decode('utf-8')
+    temp = float(dato_str1)
+    press = float(dato_str2)
+    return temp, press
 
 def send_end_message():
     """ Funcion para enviar un mensaje de finalizacion a la ESP32 """
@@ -42,70 +40,96 @@ def send_end_message():
     ser.write(end_message)
 
 def cambiar_ventana(new_size):
-    largo_mensaje = 7 + len(str(new_size))
+    largo_mensaje = len(str(new_size))
     change_message = pack(f'{largo_mensaje}s', f'{new_size}\0'.encode()) #pack('9s', '6\0')
     ser.write(change_message)
 
 def terminar_conexion():
     # Se envia el mensaje de termino de comunicacion
     send_end_message()
-    ser.close()
-
-# Funciones auxiliares
-def comenzar_lectura():
+    # Esperamos que la ESP32 responda
     while True:
-        if ser.in_waiting > 0: #verifica si hay datos en el puerto serial
+        if ser.in_waiting > 0:
             try:
                 message = receive_response()
-                if b"READY" in message:
-                    print("Mensaje de inicio recibido")
+                # print(message)
+                if b"CLOSED" in message:
                     break
             except:
                 continue
-    
-    print("Sending begin message")
+    ser.close()
+
+# Funciones auxiliares
+
+def comenzar_lectura():
+
     # Se envia el mensaje de inicio de comunicacion
     message = pack('6s','BEGIN\0'.encode()) #Minuto 30 del aux 2
     send_message(message)
 
-def leyendo(n):
-    # Se lee data por la conexion serial
-    listen_forever()
     while True:
-        print("python está esperando que le manden datitos")
         if ser.in_waiting > 0: #verifica si hay datos en el puerto serial
             try:
-                message = receive_data(n)
-                return message
+                message = receive_response()
+                if b"OK" in message:
+                    break
+            except:
+                continue
+    
+    
+
+def leyendo():
+    #Creamos un arreglo para guardar los datos
+    temperatura = []
+    presion = []
+    # Se lee data por la conexion serial
+    #listen_forever()
+    while True:
+        if ser.in_waiting > 0: #verifica si hay datos en el puerto serial
+            try:
+                temp, press = receive_data()
+                if temp is None:
+                    data = {
+                        "ventana_temperatura": temperatura[:-1],
+                        "ventana_presion": presion[:-1],
+                        "tRMS": temperatura[-1],
+                        "pRMS": presion[-1]
+                    }
+                    return data
+                temperatura += [temp]
+                presion += [press]
             except:
                 continue
 
-def graficar(lista,variable):
-    x = list(range(len(lista)))
+def graficar(lista,variable, title, filename):
+    plt.clf()
+    x = [i*TIME for i in range(len(lista))]
     plt.plot(x, lista, marker='o', linestyle='-', color='b', label='Datos')
-    plt.xlabel('Mediciones')
+    plt.xlabel('Tiempo (s)')
     plt.ylabel(variable)
-    plt.title('Gráfico de Dispersión con Línea')
+    plt.title(title)
     plt.legend()
-    plt.show()
+    plt.savefig(filename)
 
 def mostrar_datos(datos):
     presiones = datos["ventana_presion"]
     temperaturas = datos["ventana_temperatura"]
     pRMS = datos["pRMS"]
     tRMS = datos["tRMS"]
-    graficar(presiones, "Presión")
-    print(presiones)
-    print(f"El RMS fue de {pRMS}")
-    print(temperaturas)
-    graficar(temperaturas, "Temperatura")
+    graficar(temperaturas, "Temperatura (°C)", "Temperatura", "temperatura.png")
+    print("Tamaño de la ventana: ", len(temperaturas))
+    print("Datos temperatura: ",temperaturas)
     print(f"El RMS fue de {tRMS}")
+    graficar(presiones, "Presión (Pa)", "Presion", "presion.png")
+    print("Datos presion: ",presiones)
+    print(f"El RMS fue de {pRMS}")
 
 
-def solicitar_ventana(n):
+def solicitar_ventana():
+    print("Indicandole al ESP32 que comience a leer")
     comenzar_lectura()
-    datos = leyendo(n)
-    return datos
+    print("Recibiendo datos...")
+    return leyendo()
 
 
 
@@ -125,6 +149,16 @@ def listen_forever():
     while True:
         print(receive_response())
 
+# while True:
+#     if ser.in_waiting > 0: #verifica si hay datos en el puerto serial
+#         try:
+#             message = receive_response()
+#             if b"READY" in message:
+#                 print("Mensaje READY recibido")
+#                 send_message("START\0".encode())
+#                 break
+#         except:
+#             continue
 while True:
     desplegar_menu_principal()
 
@@ -135,7 +169,7 @@ while True:
         """
         Solicitamos una ventana y graficamos los datos
         """
-        datos = solicitar_ventana(window_size)
+        datos = solicitar_ventana()
         mostrar_datos(datos)
 
     elif respuesta == "2":
@@ -146,7 +180,6 @@ while True:
             Cambiar el numero de ventana y enviar mensaje para que ellos lo cambien
             """
             cambiar_ventana(respuesta2) #Solicitamos al ESP32 que cambie el tamaño de la ventana
-            window_size = respuesta2 #Cambiamos el tamaño de la ventana para nosotros
 
 
     elif respuesta == "3":

@@ -699,16 +699,16 @@ void app_main(void) {
 
     // Avisamos que estamos listos para recibir datos
     // Nos quedamos esperando a que la computadora nos avise que iniciemos el programa
-    char dataResponse[6];
-    while(1){
-        uart_write_bytes(UART_NUM, "READY\0", 6);
-        int rLen = serial_read(dataResponse, 6);
-        if (rLen > 0) {
-            if (strcmp(dataResponse, "START") == 0) {
-                break;
-            }
-        }
-    }
+    // char dataResponse[6];
+    // while(1){
+    //     uart_write_bytes(UART_NUM, "READY\0", 6);
+    //     int rLen = serial_read(dataResponse, 6);
+    //     if (rLen > 0) {
+    //         if (strcmp(dataResponse, "START") == 0) {
+    //             break;
+    //         }
+    //     }
+    // }
 
     // Esperamos respuesta de la computadora
     //printf("Start program\n\n");
