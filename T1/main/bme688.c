@@ -474,9 +474,9 @@ int bme_check_forced_mode(void) {
     return (tmp == 0b001 && tmp2 == 0x59 && tmp3 == 0x00 && tmp4 == 0b100000 && tmp5 == 0b01010101);
 }
 
-int *bme_calculate(uint32_t temp_adc, uint32_t press_adc) {
+int *bme_calculate(uint32_t temp_adc, uint32_t press_adc, uint32_t hum_adc, uint32_t res_head_range, uint32_t res_heat_val) {
     // Arreglo para guardar los datos, la pedimos con malloc
-    int *data = (int *)malloc(2 * sizeof(int));
+    int *data = (int *)malloc(4 * sizeof(int));
 
     // Datasheet[23]
     // https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme688-ds000.pdf#page=23
@@ -592,6 +592,90 @@ int *bme_calculate(uint32_t temp_adc, uint32_t press_adc) {
 
     data[1] = press_comp;
 
+    // Datasheet[25]
+    // https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme688-ds000.pdf#page=25
+
+    uint8_t addr_par_h1_lbs = 0xE2[0:3], addr_par_h1_msb = 0xE1;
+    uint8_t addr_par_h2_lbs = 0xE2[4:7], addr_par_h2_msb = 0xE3;
+    uint8_t addr_par_h3_lbs = 0xE4;
+    uint8_t addr_par_h4_lbs = 0xE5;
+    uint8_t addr_par_h5_lbs = 0xE6;
+    uint8_t addr_par_h6_lbs = 0xE7;
+    uint8_t addr_par_h7_lbs = 0xE8;
+    uint16_t par_h1;
+    uint16_t par_h2;
+    uint16_t par_h3;
+    uint16_t par_h4;
+    uint16_t par_h5;
+    uint16_t par_h6;
+    uint16_t par_h7;
+
+    uint8_t par_h[9];
+    bme_i2c_read(I2C_NUM_0, &addr_par_h1_lbs, par_h, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_h1_msb, par_h + 1, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_h2_lbs, par_h + 2, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_h2_msb, par_h + 3, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_h3_lbs, par_h + 4, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_h4_lbs, par_h + 5, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_h5_lbs, par_h + 6, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_h6_lbs, par_h + 7, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_h7_lbs, par_h + 8, 1);
+
+    par_h1 = (par_h[1] << 8) | par_h[0];
+    par_h2 = (par_h[3] << 8) | par_h[2];
+    par_h3 = par_h[4];
+    par_h4 = par_h[5];
+    par_h5 = par_h[6];
+    par_h6 = par_h[7];
+    par_h7 = par_h[8];
+
+    int64_t var1_h;
+    int64_t var2_h;
+    int64_t var3_h;
+    int64_t var4_h;
+    int64_t var5_h;
+    int64_t var6_h;
+
+    int hum_comp, temp_scaled;
+
+    temp_scaled = (int32_t)calc_temp;
+    var1_h = (int32_t)hum_adc - (int32_t)((int32_t)par_h1 << 4) - (((temp_scaled * (int32_t)par_h3) / ((int32_t)100)) >> 1); 
+    var2_h = ((int32_t)par_h2 * (((temp_scaled * (int32_t)par_h4) / ((int32_t)100)) + (((temp_scaled * ((temp_scaled * (int32_t)par_h5) / ((int32_t)100))) >> 6) / ((int32_t)100)) + ((int32_t)(1 << 14)))) >> 10;
+    var3_h = var1_h * var2_h;
+    var4_h = (((int32_t)par_h6 << 7) + ((temp_scaled * (int32_t)par_h7) / ((int32_t)100))) >> 4; 
+    var5_h = ((var3_h >> 14) * (var3_h >> 14)) >> 10; 
+    var6_h = (var4_h * var5_h) >> 1; 
+    hum_comp = (var3_h + var6_h) >> 12; 
+    hum_comp = (((var3_h + var6_h) >> 10) * ((int32_t) 1000)) >> 12;
+
+    data[2] = hum_comp;
+
+    // Datasheet[27]
+    // https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme688-ds000.pdf#page=27
+
+    uint8_t addr_par_g1_lsb = 0xED;
+    uint8_t addr_par_g2_lsb = 0xEB, addr_par_g2_msb = 0xEC;
+    uint8_t addr_par_g3_lsb = 0xEE;
+    uint16_t par_g1;
+    uint16_t par_g2;
+    uint16_t par_g3;
+
+    uint8_t par_g[4];
+    bme_i2c_read(I2C_NUM_0, &addr_par_g1_lsb, par_g, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_g2_lsb, par_g + 1, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_g2_msb, par_g + 2, 1);
+    bme_i2c_read(I2C_NUM_0, &addr_par_g3_lsb, par_g + 3, 1);
+
+    par_g1 = par_g[0];
+    par_g2 = (par_g[2] << 8) | par_g[1];
+    par_g3 = par_g[3];
+
+    int64_t var1_g;
+    int64_t var2_g;
+    int64_t var3_g;
+    int64_t var4_g;
+    int64_t var5_g;
+
     return data;
 }
 
@@ -620,6 +704,7 @@ void bme_read_data(int window, int time) {
     //printf("Obteniendo las direcciones de los datos\n");
     uint8_t forced_temp_addr[] = {0x22, 0x23, 0x24};
     uint8_t forced_press_addr[] = {0x1F, 0x20, 0x21};
+    uint8_t forced_hum_addr[] = {0x25, 0x26};
 
     //printf("Comenzamos a leer la ventana\n");
     for (int i = 0; i < window; i++) {
@@ -627,6 +712,7 @@ void bme_read_data(int window, int time) {
         //printf("Leyendo ventana %d\n", i);
         uint32_t temp_adc = 0;
         uint32_t press_adc = 0;
+        uint32_t hum_adc = 0;
 
         //printf("Forzando modo\n");
         bme_forced_mode();
@@ -649,8 +735,14 @@ void bme_read_data(int window, int time) {
         bme_i2c_read(I2C_NUM_0, &forced_press_addr[2], &prs, 1);
         press_adc = press_adc | (prs & 0xf0) >> 4;
 
+        //printf("Leyendo datos de humedad\n");
+        bme_i2c_read(I2C_NUM_0, &forced_hum_addr[0], &prs, 1);
+        hum_adc = hum_adc | prs << 12;
+        bme_i2c_read(I2C_NUM_0, &forced_hum_addr[1], &prs, 1);
+        hum_adc = hum_adc | prs << 4;
+
         //printf("Calculando datos de temperatura y presion\n");
-        int *data = bme_calculate(temp_adc, press_adc);
+        int *data = bme_calculate(temp_adc, press_adc, hum_adc, 0);
         uint32_t temp = data[0];
         uint32_t press = data[1];
         free(data);
