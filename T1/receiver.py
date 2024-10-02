@@ -26,13 +26,18 @@ def receive_data():
     respuesta_encriptada = receive_response()
     # print(respuesta_encriptada)
     if b'FINISH' in respuesta_encriptada:
-        return None, None
+        return None, None, None, None
     # Separamos la respuesta en dos partes
     dato_str1 = respuesta_encriptada[:9].decode('utf-8')
-    dato_str2 = respuesta_encriptada[9:].decode('utf-8')
+    dato_str2 = respuesta_encriptada[9:18].decode('utf-8')
+    dato_str3 = respuesta_encriptada[18:27].decode('utf-8')
+    dato_str4 = respuesta_encriptada[27:].decode('utf-8')
+
     temp = float(dato_str1)
     press = float(dato_str2)
-    return temp, press
+    hum = float(dato_str3)
+    co = float(dato_str4)
+    return temp, press, hum, co
 
 def send_end_message():
     """ Funcion para enviar un mensaje de finalizacion a la ESP32 """
@@ -82,22 +87,41 @@ def leyendo():
     #Creamos un arreglo para guardar los datos
     temperatura = []
     presion = []
+    humedad = []
+    concentracion_co = []
     # Se lee data por la conexion serial
     #listen_forever()
     while True:
         if ser.in_waiting > 0: #verifica si hay datos en el puerto serial
             try:
-                temp, press = receive_data()
+                temp, press, hum, co = receive_data()
                 if temp is None:
                     data = {
-                        "ventana_temperatura": temperatura[:-1],
-                        "ventana_presion": presion[:-1],
-                        "tRMS": temperatura[-1],
-                        "pRMS": presion[-1]
+                        "ventana_temperatura": temperatura[:-7],
+                        "ventana_presion": presion[:-7],
+                        "ventana_humedad": humedad[:-7],
+                        "ventana_concentracion": concentracion_co[:-7],
+
+                        "tRMS": temperatura[-7],
+                        "pRMS": presion[-7],
+                        "hRMS": humedad[-7],
+                        "cRMS": concentracion_co[-7],
+
+                        "peaks_temperatura" : temperatura[-6,-1],
+                        "peaks_presion" : presion[-6,-1],
+                        "peaks_humedad" : humedad[-6,-1],
+                        "peaks_concentracion" : concentracion_co[-6,-1],
+
+                        "FFT_temperatura" : temperatura[-1],
+                        "FFT_presion" : presion[-1],
+                        "FFT_humedad" : humedad[-1],
+                        "FFT_concentracion" : concentracion_co[-1]
                     }
                     return data
                 temperatura += [temp]
                 presion += [press]
+                humedad += [hum]
+                concentracion_co += [co]
             except:
                 continue
 
@@ -114,15 +138,48 @@ def graficar(lista,variable, title, filename):
 def mostrar_datos(datos):
     presiones = datos["ventana_presion"]
     temperaturas = datos["ventana_temperatura"]
+    humedades = datos["ventana_humedad"]
+    concentraciones = datos["ventana_concentracion"]
+
     pRMS = datos["pRMS"]
     tRMS = datos["tRMS"]
+    hRMS = datos["hRMS"]
+    cRMS = datos["cRMS"]
+
+    peaks_temperatura = datos["peaks_temperatura"]
+    peaks_presion = datos["peaks_presion"]
+    peaks_humedad = datos["peaks_humedad"]
+    peaks_concentracion = datos["peaks_concentracion"]
+
+    FFT_temperatura = datos["FFT_temperatura"]
+    FFT_presion = datos["FFT_presion"]
+    FFT_humedad = datos["FFT_humedad"]
+    FFT_concentracion = datos["FFT_concentracion"]
+
     graficar(temperaturas, "Temperatura (°C)", "Temperatura", "temperatura.png")
     print("Tamaño de la ventana: ", len(temperaturas))
     print("Datos temperatura: ",temperaturas)
     print(f"El RMS fue de {tRMS}")
+    print(f"Los 5 datos mas altos fueron: {peaks_temperatura}")
+    print(f"La transformada de fourier fue: {FFT_temperatura}")
+
     graficar(presiones, "Presión (Pa)", "Presion", "presion.png")
     print("Datos presion: ",presiones)
     print(f"El RMS fue de {pRMS}")
+    print(f"Los 5 datos mas altos fueron: {peaks_presion}")
+    print(f"La transformada de fourier fue: {FFT_presion}")
+
+    graficar(humedades, "Humedad (????)", "Humedad", "humedad.png") ##### Rellenar unidad de medida
+    print("Datos humedad: ",humedades)
+    print(f"El RMS fue de {hRMS}")
+    print(f"Los 5 datos mas altos fueron: {peaks_humedad}")
+    print(f"La transformada de fourier fue: {FFT_humedad}")
+
+    graficar(concentraciones, "Concentración de CO (????)", "Concentracion de CO", "concentracion.png") ##### Rellenar unidad de medida
+    print("Datos concentración: ",concentraciones)
+    print(f"El RMS fue de {cRMS}")
+    print(f"Los 5 datos mas altos fueron: {peaks_concentracion}")
+    print(f"La transformada de fourier fue: {FFT_concentracion}")
 
 
 def solicitar_ventana():
