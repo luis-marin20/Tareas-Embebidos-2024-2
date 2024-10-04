@@ -264,29 +264,37 @@ void restart_ESP(){
 // ------------ BME 688 ------------- //
 
 /**
- * @brief Funcion que calcula la FFT de un elemnto y guarda el resultado inplace
+ * @brief Funcion que calcula la FFT de un arreglo y guarda el resultado inplace
  *
- * @param val Elemento sobre los que se quiere calcular la FFT
+ * @param array Arreglo de elementos sobre los que se quiere calcular la FFT
  * @param size Tamano del arreglo
- * @param real Elemento donde se guardara la parte real
- * @param imag Elemento donde se guardara la parte imaginaria
+ * @param array_re Direccion del arreglo donde se guardara la parte real. Debe ser de tamano size
+ * @param array_im Direccion del arreglo donde se guardara la parte imaginaria. Debe ser de tamano size
  */
-void calcularFFT(float val, int size, float real, float imag) {
-    for (int n = 0; n < size; n++) {
-        float angulo = 2 * M_PI * k * n / size;
-        float cos_angulo = cos(angulo);
-        float sin_angulo = -sin(angulo);
-        real += array[n] * cos_angulo;
-        imag += array[n] * sin_angulo;
+void calcularFFT(float *array, int size, float *array_re, float *array_im) {
+    for (int k = 0; k < size; k++) {
+        float real = 0;
+        float imag = 0;
+
+        for (int n = 0; n < size; n++) {
+            float angulo = 2 * M_PI * k * n / size;
+            float cos_angulo = cos(angulo);
+            float sin_angulo = -sin(angulo);
+
+            real += array[n] * cos_angulo;
+            imag += array[n] * sin_angulo;
+        }
+        real /= size;
+        imag /= size;
+        array_re[k] = real;
+        array_im[k] = imag;
     }
-    real /= size;
-    imag /= size;
-    array_re[k] = real;
-    array_im[k] = imag;
 }
 
-float modulo(float real, float imag) {
-    return sqrt(real * real + imag * imag);
+void modulo(float *real, float *imag, float *mod, int size) {
+    for (int i = 0; i < size; i++) {
+        mod[i] = sqrt(real[i] * real[i] + imag[i] * imag[i]);
+    }
 }
 
 uint8_t calc_gas_wait(uint16_t dur) {
@@ -727,6 +735,11 @@ void bme_read_data(int window, int time) {
     float rms_hum = 0;
     float rms_gas = 0;
 
+    float data_temp[window];
+    float data_press[window];
+    float data_hum[window];
+    float data_gas[window];
+
     // Se obtienen los datos de temperatura y presion
     //printf("Obteniendo las direcciones de los datos\n");
     uint8_t forced_temp_addr[] = {0x22, 0x23, 0x24};
@@ -802,50 +815,29 @@ void bme_read_data(int window, int time) {
         rms_hum += (hum_f * hum_f) / window;
         rms_gas += (gas_f * gas_f) / window;
 
-        // Calculamos la FFT de los datos
-        //printf("Calculando FFT de los datos\n");
-
-        float fft_tmp_real = 0, fft_tmp_imag = 0;
-        float fft_press_real = 0, fft_press_imag = 0;
-        float fft_hum_real = 0, fft_hum_imag = 0;
-        float fft_gas_real = 0, fft_gas_imag = 0;
-
-        calcularFFT(temp_f, window, fft_tmp_real, fft_tmp_imag);
-        calcularFFT(press_f, window, fft_press_real, fft_press_imag);
-        calcularFFT(hum_f, window, fft_hum_real, fft_hum_imag);
-        calcularFFT(gas_f, window, fft_gas_real, fft_gas_imag);
-        float fft_tmp = modulo(fft_tmp_real, fft_tmp_imag);
-        float fft_press = modulo(fft_press_real, fft_press_imag);
-        float fft_hum = modulo(fft_hum_real, fft_hum_imag);
-        float fft_gas = modulo(fft_gas_real, fft_gas_imag);
+        data_temp[i] = temp_f;
+        data_press[i] = press_f;
+        data_hum[i] = hum_f;
+        data_gas[i] = gas_f;
 
         // Enviamos los datos a la computadora
         //printf("Enviando datos de temperatura, presion, humedad y concentracion de CO\n");
         char send_temp[20];
-        char send_fft_temp[20];
         char send_press[20];
-        char send_fft_press[20];
         char send_hum[20];
-        char send_fft_hum[20];
         char send_gas[20];
-        char send_fft_gas[20];
 
         sprintf(send_temp, "%f", temp_f);
-        sprintf(send_fft_temp, "%f", fft_tmp);
         sprintf(send_press, "%f", press_f);
-        sprintf(send_fft_press, "%f", fft_press);
         sprintf(send_hum, "%f", hum_f);
-        sprintf(send_fft_hum, "%f", fft_hum);
         sprintf(send_gas, "%f", gas_f);
-        sprintf(send_fft_gas, "%f", fft_gas);
         uart_write_bytes(UART_NUM, send_temp, strlen(send_temp));
-        uart_write_bytes(UART_NUM, send_fft_temp, strlen(send_fft_temp));
+        uart_write_bytes(UART_NUM, " ", 1);
         uart_write_bytes(UART_NUM, send_press, strlen(send_press));
-        uart_write_bytes(UART_NUM, send_fft_press, strlen(send_fft_press));
+        uart_write_bytes(UART_NUM, " ", 1);
         uart_write_bytes(UART_NUM, send_hum, strlen(send_hum));
-        uart_write_bytes(UART_NUM, send_fft_hum, strlen(send_fft_hum));
+        uart_write_bytes(UART_NUM, " ", 1);
         uart_write_bytes(UART_NUM, send_gas, strlen(send_gas));
-        uart_write_bytes(UART_NUM, send_fft_gas, strlen(send_fft_gas));
     }
     vTaskDelay(pdMS_TO_TICKS(time+2000));
 
@@ -855,6 +847,35 @@ void bme_read_data(int window, int time) {
     float final_rms_press = sqrt(rms_press);
     float final_rms_hum = sqrt(rms_hum);
     float final_rms_gas = sqrt(rms_gas);
+
+    printf("Calculo de la FFT de los datos\n");
+    // Calculamos la FFT de los datos
+    float fft_temp_real[window], fft_temp_imag[window];
+    float fft_press_real[window], fft_press_imag[window];
+    float fft_hum_real[window], fft_hum_imag[window];
+    float fft_gas_real[window], fft_gas_imag[window];
+    // float fft_tmp[window];
+    // float fft_press[window];
+    // float fft_hum[window];
+    // float fft_gas[window];
+
+    printf("Calculando FFT de los datos\n");
+    calcularFFT(data_temp, window, fft_temp_real, fft_temp_imag);
+    calcularFFT(data_press, window, fft_press_real, fft_press_imag);
+    calcularFFT(data_hum, window, fft_hum_real, fft_hum_imag);
+    calcularFFT(data_gas, window, fft_gas_real, fft_gas_imag);
+
+    // printf("%f %f\n", fft_temp_real[0], fft_temp_imag[0]);
+    // printf("%f %f\n", fft_temp_real[1], fft_temp_imag[1]);
+
+    // printf("Calculando modulo de los datos\n");
+    // modulo(fft_temp_real, fft_temp_imag, fft_tmp, window);
+    // modulo(fft_press_real, fft_press_imag, fft_press, window);
+    // modulo(fft_hum_real, fft_hum_imag, fft_hum, window);
+    // modulo(fft_gas_real, fft_gas_imag, fft_gas, window);
+
+    // printf("%f\n", fft_tmp[0]);
+    // printf("%f\n", fft_tmp[1]);
 
     // Enviamos los datos a la computadora
     printf("Enviando RMS de los datos\n");
@@ -867,9 +888,47 @@ void bme_read_data(int window, int time) {
     sprintf(send_hum_rms, "%f", final_rms_hum);
     sprintf(send_gas_rms, "%f", final_rms_gas);
     uart_write_bytes(UART_NUM, send_tmp_rms, strlen(send_tmp_rms));
+    uart_write_bytes(UART_NUM, " ", 1);
     uart_write_bytes(UART_NUM, send_press_rms, strlen(send_press_rms));
+    uart_write_bytes(UART_NUM, " ", 1);
     uart_write_bytes(UART_NUM, send_hum_rms, strlen(send_hum_rms));
+    uart_write_bytes(UART_NUM, " ", 1);
     uart_write_bytes(UART_NUM, send_gas_rms, strlen(send_gas_rms));
+
+    vTaskDelay(pdMS_TO_TICKS(time+2000));
+    // printf("Enviando FFT de los datos\n");
+    // vTaskDelay(pdMS_TO_TICKS(time));
+    // for (int i=0; i<window; i++){
+    //     vTaskDelay(pdMS_TO_TICKS(time));
+    //     char send_tmp_fft[20];
+    //     char send_press_fft[20];
+    //     char send_hum_fft[20];
+    //     char send_gas_fft[20];
+    //     sprintf(send_tmp_fft, "%f", fft_tmp[i]);
+    //     sprintf(send_press_fft, "%f", fft_press[i]);
+    //     sprintf(send_hum_fft, "%f", fft_hum[i]);
+    //     sprintf(send_gas_fft, "%f", fft_gas[i]);
+    //     uart_write_bytes(UART_NUM, send_tmp_fft, strlen(send_tmp_fft));
+    //     uart_write_bytes(UART_NUM, send_press_fft, strlen(send_press_fft));
+    //     uart_write_bytes(UART_NUM, send_hum_fft, strlen(send_hum_fft));
+    //     uart_write_bytes(UART_NUM, send_gas_fft, strlen(send_gas_fft));
+    //     vTaskDelay(pdMS_TO_TICKS(time));
+    // }
+    char send_tmp_fft[20];
+    char send_press_fft[20];
+    char send_hum_fft[20];
+    char send_gas_fft[20];
+    sprintf(send_tmp_fft, "%f", sqrt(fft_temp_real[window-1]*fft_temp_real[window-1] + fft_temp_imag[window-1]*fft_temp_imag[window-1]));
+    sprintf(send_press_fft, "%f", sqrt(fft_press_real[window-1]*fft_press_real[window-1] + fft_press_imag[window-1]*fft_press_imag[window-1]));
+    sprintf(send_hum_fft, "%f", sqrt(fft_hum_real[window-1]*fft_hum_real[window-1] + fft_hum_imag[window-1]*fft_hum_imag[window-1]));
+    sprintf(send_gas_fft, "%f", sqrt(fft_gas_real[window-1]*fft_gas_real[window-1] + fft_gas_imag[window-1]*fft_gas_imag[window-1]));
+    uart_write_bytes(UART_NUM, send_tmp_fft, strlen(send_tmp_fft));
+    uart_write_bytes(UART_NUM, " ", 1);
+    uart_write_bytes(UART_NUM, send_press_fft, strlen(send_press_fft));
+    uart_write_bytes(UART_NUM, " ", 1);
+    uart_write_bytes(UART_NUM, send_hum_fft, strlen(send_hum_fft));
+    uart_write_bytes(UART_NUM, " ", 1);
+    uart_write_bytes(UART_NUM, send_gas_fft, strlen(send_gas_fft));
     vTaskDelay(pdMS_TO_TICKS(time+2000));
 }
 

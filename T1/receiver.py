@@ -32,33 +32,36 @@ def receive_data():
     if b'FINISH' in respuesta_encriptada:
         return None, None, None, None
     # Separamos la respuesta en dos partes
-    print(len(respuesta_encriptada))
-    if len(respuesta_encriptada) == 72:
-        dato_str1 = respuesta_encriptada[:9].decode('utf-8')
-        dato_fft1 = respuesta_encriptada[9:18].decode('utf-8')
-        dato_str2 = respuesta_encriptada[18:27].decode('utf-8')
-        dato_fft2 = respuesta_encriptada[27:36].decode('utf-8')
-        dato_str3 = respuesta_encriptada[36:45].decode('utf-8')
-        dato_fft3 = respuesta_encriptada[45:54].decode('utf-8')
-        dato_str4 = respuesta_encriptada[54:63].decode('utf-8')
-        dato_fft4 = respuesta_encriptada[63::].decode('utf-8')
+    print(respuesta_encriptada)
+    datos = respuesta_encriptada.decode('utf-8').split(" ")
+    return float(datos[0]), float(datos[1]), float(datos[2]), float(datos[3])
 
-        temp = [float(dato_str1), float(dato_fft1)]
-        press = [float(dato_str2), float(dato_fft2)]
-        hum = [float(dato_str3), float(dato_fft3)]
-        co = [float(dato_str4), float(dato_fft4)]
-        return temp, press, hum, co
-    else:
-        dato_str1 = respuesta_encriptada[:9].decode('utf-8')
-        dato_str2 = respuesta_encriptada[9:18].decode('utf-8')
-        dato_str3 = respuesta_encriptada[18:27].decode('utf-8')
-        dato_str4 = respuesta_encriptada[27::].decode('utf-8')
+    # if len(respuesta_encriptada) == 72:
+    #     dato_str1 = respuesta_encriptada[:9].decode('utf-8')
+    #     dato_fft1 = respuesta_encriptada[9:18].decode('utf-8')
+    #     dato_str2 = respuesta_encriptada[18:27].decode('utf-8')
+    #     dato_fft2 = respuesta_encriptada[27:36].decode('utf-8')
+    #     dato_str3 = respuesta_encriptada[36:45].decode('utf-8')
+    #     dato_fft3 = respuesta_encriptada[45:54].decode('utf-8')
+    #     dato_str4 = respuesta_encriptada[54:63].decode('utf-8')
+    #     dato_fft4 = respuesta_encriptada[63::].decode('utf-8')
 
-        temp = [float(dato_str1), None]
-        press = [float(dato_str2), None]
-        hum = [float(dato_str3), None]
-        co = [float(dato_str4), None]
-        return temp, press, hum, co
+    #     temp = [float(dato_str1), float(dato_fft1)]
+    #     press = [float(dato_str2), float(dato_fft2)]
+    #     hum = [float(dato_str3), float(dato_fft3)]
+    #     co = [float(dato_str4), float(dato_fft4)]
+    #     return temp, press, hum, co
+    # else:
+    #     dato_str1 = respuesta_encriptada[:9].decode('utf-8')
+    #     dato_str2 = respuesta_encriptada[9:18].decode('utf-8')
+    #     dato_str3 = respuesta_encriptada[18:27].decode('utf-8')
+    #     dato_str4 = respuesta_encriptada[27::].decode('utf-8')
+
+    #     temp = [float(dato_str1), None]
+    #     press = [float(dato_str2), None]
+    #     hum = [float(dato_str3), None]
+    #     co = [float(dato_str4), None]
+    #     return temp, press, hum, co
 
 def send_end_message():
     """ Funcion para enviar un mensaje de finalizacion a la ESP32 """
@@ -107,13 +110,9 @@ def comenzar_lectura():
 def leyendo():
     #Creamos un arreglo para guardar los datos
     temperatura = []
-    tmp_fft = []
     presion = []
-    pres_fft = []
     humedad = []
-    hum_fft = []
     concentracion_co = []
-    co_fft = []
     peaks_tmp = []
     peaks_pres = []
     peaks_hum = []
@@ -125,46 +124,37 @@ def leyendo():
             try:
                 temp, press, hum, co = receive_data()
                 if temp is None:
+                    for i in range(len(temperatura)-2):
+                        insertar_ordenado(peaks_tmp, temperatura[i])
+                        insertar_ordenado(peaks_pres, presion[i])
+                        insertar_ordenado(peaks_hum, humedad[i])
+                        insertar_ordenado(peaks_co, concentracion_co[i])
                     data = {
-                        "ventana_temperatura": temperatura[:-1],
-                        "ventana_presion": presion[:-1],
-                        "ventana_humedad": humedad[:-1],
-                        "ventana_concentracion": concentracion_co[:-1],
+                        "ventana_temperatura": temperatura[:-2],
+                        "ventana_presion": presion[:-2],
+                        "ventana_humedad": humedad[:-2],
+                        "ventana_concentracion": concentracion_co[:-2],
 
-                        "tRMS": temperatura[-1],
-                        "pRMS": presion[-1],
-                        "hRMS": humedad[-1],
-                        "cRMS": concentracion_co[-1],
+                        "tRMS": temperatura[-2],
+                        "pRMS": presion[-2],
+                        "hRMS": humedad[-2],
+                        "cRMS": concentracion_co[-2],
 
                         "peaks_temperatura" : [-x for x in peaks_tmp[:6]] if len(peaks_tmp) > 5 else [-x for x in peaks_tmp],
                         "peaks_presion" : [-x for x in peaks_pres[:6]] if len(peaks_pres) > 5 else [-x for x in peaks_pres],
                         "peaks_humedad" : [-x for x in peaks_hum[:6]] if len(peaks_hum) > 5 else [-x for x in peaks_hum],
                         "peaks_concentracion" : [-x for x in peaks_co[:6]] if len(peaks_co) > 5 else [-x for x in peaks_co],
 
-                        "FFT_temperatura" : tmp_fft,
-                        "FFT_presion" : pres_fft,
-                        "FFT_humedad" : hum_fft,
-                        "FFT_concentracion" : co_fft
+                        "FFT_temperatura" : temperatura[-1],
+                        "FFT_presion" : presion[-1],
+                        "FFT_humedad" : humedad[-1],
+                        "FFT_concentracion" : concentracion_co[-1]
                     }
                     return data
-                if temp[1] is not None:
-                    temperatura += [temp[0]]
-                    tmp_fft += [temp[1]]
-                    insertar_ordenado(peaks_tmp, temp[0])
-                    presion += [press[0]]
-                    pres_fft += [press[1]]
-                    insertar_ordenado(peaks_pres, press[0])
-                    humedad += [hum[0]]
-                    hum_fft += [hum[1]]
-                    insertar_ordenado(peaks_hum, hum[0])
-                    concentracion_co += [co[0]]
-                    co_fft += [co[1]]
-                    insertar_ordenado(peaks_co, co[0])
-                else:
-                    temperatura += [temp[0]]
-                    presion += [press[0]]
-                    humedad += [hum[0]]
-                    concentracion_co += [co[0]]
+                temperatura.append(temp)
+                presion.append(press)
+                humedad.append(hum)
+                concentracion_co.append(co)
             except:
                 continue
 
@@ -200,30 +190,26 @@ def mostrar_datos(datos):
     FFT_concentracion = datos["FFT_concentracion"]
 
     graficar(temperaturas, "Temperatura (°C)", "Temperatura", "temperatura.png")
-    graficar(FFT_temperatura, "FFT", "FFT Temperatura", "temperatura_fft.png")
     print("Tamaño de la ventana: ", len(temperaturas), "\n")
-    print("Datos temperatura: ",temperaturas, "\n")
+    print("Datos temperatura: ",temperaturas)
     print(f"El RMS fue de {tRMS}")
     print(f"Los 5 datos mas altos fueron: {peaks_temperatura}")
-    print(f"La transformada de fourier fue: {FFT_temperatura}")
+    print(f"La transformada de fourier fue: {FFT_temperatura}\n")
 
     graficar(presiones, "Presión (Pa)", "Presion", "presion.png")
-    graficar(FFT_presion, "FFT", "FFT Presion", "presion_fft.png")
-    print("Datos presion: ",presiones, "\n")
+    print("Datos presion: ",presiones)
     print(f"El RMS fue de {pRMS}")
     print(f"Los 5 datos mas altos fueron: {peaks_presion}")
-    print(f"La transformada de fourier fue: {FFT_presion}")
+    print(f"La transformada de fourier fue: {FFT_presion}\n")
 
     graficar(humedades, "Humedad (????)", "Humedad", "humedad.png") ##### Rellenar unidad de medida
-    graficar(FFT_humedad, "FFT", "FFT Humedad", "humedad_fft.png")
-    print("Datos humedad: ",humedades, "\n")
+    print("Datos humedad: ",humedades)
     print(f"El RMS fue de {hRMS}")
     print(f"Los 5 datos mas altos fueron: {peaks_humedad}")
-    print(f"La transformada de fourier fue: {FFT_humedad}")
+    print(f"La transformada de fourier fue: {FFT_humedad}\n")
 
     graficar(concentraciones, "Concentración de CO (????)", "Concentracion de CO", "concentracion.png") ##### Rellenar unidad de medida
-    graficar(FFT_concentracion, "FFT", "FFT Concentracion de CO", "concentracion_fft.png")
-    print("Datos concentración: ",concentraciones, "\n")
+    print("Datos concentración: ",concentraciones)
     print(f"El RMS fue de {cRMS}")
     print(f"Los 5 datos mas altos fueron: {peaks_concentracion}")
     print(f"La transformada de fourier fue: {FFT_concentracion}")
