@@ -297,6 +297,11 @@ void modulo(float *real, float *imag, float *mod, int size) {
     }
 }
 
+// Función de comparación para ordenar de mayor a menor
+int comparar(const void *a, const void *b) {
+    return (*(int*)b - *(int*)a);  // Cambiar el orden de comparación
+}
+
 uint8_t calc_gas_wait(uint16_t dur) {
     // Fuente: BME688 API
     // https://github.com/boschsensortec/BME68x_SensorAPI/blob/master/bme68x.c#L1176
@@ -805,8 +810,8 @@ void bme_read_data(int window, int time) {
 
         float temp_f = (float)temp / 100;
         float press_f = (float)press / 100;
-        float hum_f = (float)hum / 100;
-        float gas_f = (float)gas / 100;
+        float hum_f = (float)hum / 10000000;
+        float gas_f = (float)gas / 1000;
 
         //Calculamos el RMS de los datos
         //printf("Calculando RMS de los datos\n");
@@ -865,6 +870,13 @@ void bme_read_data(int window, int time) {
     calcularFFT(data_hum, window, fft_hum_real, fft_hum_imag);
     calcularFFT(data_gas, window, fft_gas_real, fft_gas_imag);
 
+    // Calculo de los 5 peaks
+    printf("Calculando los 5 peaks de los datos\n");
+    qsort(data_temp, window, sizeof(float), comparar);
+    qsort(data_press, window, sizeof(float), comparar);
+    qsort(data_hum, window, sizeof(float), comparar);
+    qsort(data_gas, window, sizeof(float), comparar);
+
     // printf("%f %f\n", fft_temp_real[0], fft_temp_imag[0]);
     // printf("%f %f\n", fft_temp_real[1], fft_temp_imag[1]);
 
@@ -896,39 +908,60 @@ void bme_read_data(int window, int time) {
     uart_write_bytes(UART_NUM, send_gas_rms, strlen(send_gas_rms));
 
     vTaskDelay(pdMS_TO_TICKS(time+2000));
-    // printf("Enviando FFT de los datos\n");
-    // vTaskDelay(pdMS_TO_TICKS(time));
-    // for (int i=0; i<window; i++){
-    //     vTaskDelay(pdMS_TO_TICKS(time));
-    //     char send_tmp_fft[20];
-    //     char send_press_fft[20];
-    //     char send_hum_fft[20];
-    //     char send_gas_fft[20];
-    //     sprintf(send_tmp_fft, "%f", fft_tmp[i]);
-    //     sprintf(send_press_fft, "%f", fft_press[i]);
-    //     sprintf(send_hum_fft, "%f", fft_hum[i]);
-    //     sprintf(send_gas_fft, "%f", fft_gas[i]);
-    //     uart_write_bytes(UART_NUM, send_tmp_fft, strlen(send_tmp_fft));
-    //     uart_write_bytes(UART_NUM, send_press_fft, strlen(send_press_fft));
-    //     uart_write_bytes(UART_NUM, send_hum_fft, strlen(send_hum_fft));
-    //     uart_write_bytes(UART_NUM, send_gas_fft, strlen(send_gas_fft));
-    //     vTaskDelay(pdMS_TO_TICKS(time));
-    // }
-    char send_tmp_fft[20];
-    char send_press_fft[20];
-    char send_hum_fft[20];
-    char send_gas_fft[20];
-    sprintf(send_tmp_fft, "%f", sqrt(fft_temp_real[window-1]*fft_temp_real[window-1] + fft_temp_imag[window-1]*fft_temp_imag[window-1]));
-    sprintf(send_press_fft, "%f", sqrt(fft_press_real[window-1]*fft_press_real[window-1] + fft_press_imag[window-1]*fft_press_imag[window-1]));
-    sprintf(send_hum_fft, "%f", sqrt(fft_hum_real[window-1]*fft_hum_real[window-1] + fft_hum_imag[window-1]*fft_hum_imag[window-1]));
-    sprintf(send_gas_fft, "%f", sqrt(fft_gas_real[window-1]*fft_gas_real[window-1] + fft_gas_imag[window-1]*fft_gas_imag[window-1]));
-    uart_write_bytes(UART_NUM, send_tmp_fft, strlen(send_tmp_fft));
-    uart_write_bytes(UART_NUM, " ", 1);
-    uart_write_bytes(UART_NUM, send_press_fft, strlen(send_press_fft));
-    uart_write_bytes(UART_NUM, " ", 1);
-    uart_write_bytes(UART_NUM, send_hum_fft, strlen(send_hum_fft));
-    uart_write_bytes(UART_NUM, " ", 1);
-    uart_write_bytes(UART_NUM, send_gas_fft, strlen(send_gas_fft));
+
+    printf("Enviando FFT de los datos\n");
+    vTaskDelay(pdMS_TO_TICKS(time));
+    for (int i=0; i<window; i++){
+        vTaskDelay(pdMS_TO_TICKS(time));
+        char send_tmp_fft_real[20], send_tmp_fft_imag[20];
+        char send_press_fft_real[20], send_press_fft_imag[20];
+        char send_hum_fft_real[20], send_hum_fft_imag[20];
+        char send_gas_fft_real[20], send_gas_fft_imag[20];
+        sprintf(send_tmp_fft_real, "%f", fft_temp_real[i]);
+        sprintf(send_tmp_fft_imag, "%f", fft_temp_imag[i]);
+        sprintf(send_press_fft_real, "%f", fft_press_real[i]);
+        sprintf(send_press_fft_imag, "%f", fft_press_imag[i]);
+        sprintf(send_hum_fft_real, "%f", fft_hum_real[i]);
+        sprintf(send_hum_fft_imag, "%f", fft_hum_imag[i]);
+        sprintf(send_gas_fft_real, "%f", fft_gas_real[i]);
+        sprintf(send_gas_fft_imag, "%f", fft_gas_imag[i]);
+        uart_write_bytes(UART_NUM, send_tmp_fft_real, strlen(send_tmp_fft_real));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_tmp_fft_imag, strlen(send_tmp_fft_imag));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_press_fft_real, strlen(send_press_fft_real));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_press_fft_imag, strlen(send_press_fft_imag));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_hum_fft_real, strlen(send_hum_fft_real));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_hum_fft_imag, strlen(send_hum_fft_imag));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_gas_fft_real, strlen(send_gas_fft_real));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_gas_fft_imag, strlen(send_gas_fft_imag));
+        vTaskDelay(pdMS_TO_TICKS(time));
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(time+2000));
+    // Enviamos los 5 peaks
+    printf("Enviando los 5 peaks de los datos\n");
+    for (int i=0; i<5; i++) {
+        vTaskDelay(pdMS_TO_TICKS(time));
+        char send_tmp_peak[20], send_press_peak[20], send_hum_peak[20], send_gas_peak[20];
+        sprintf(send_tmp_peak, "%f", data_temp[i]);
+        sprintf(send_press_peak, "%f", data_press[i]);
+        sprintf(send_hum_peak, "%f", data_hum[i]);
+        sprintf(send_gas_peak, "%f", data_gas[i]);
+        uart_write_bytes(UART_NUM, send_tmp_peak, strlen(send_tmp_peak));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_press_peak, strlen(send_press_peak));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_hum_peak, strlen(send_hum_peak));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_gas_peak, strlen(send_gas_peak));
+        vTaskDelay(pdMS_TO_TICKS(time));
+    }
     vTaskDelay(pdMS_TO_TICKS(time+2000));
 }
 

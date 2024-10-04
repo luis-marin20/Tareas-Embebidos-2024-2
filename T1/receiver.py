@@ -28,13 +28,27 @@ def receive_data():
     """ Funcion que recibe n floats de la ESP32 
     y los imprime en consola """
     respuesta_encriptada = receive_response()
-    # print(respuesta_encriptada)
-    if b'FINISH' in respuesta_encriptada:
-        return None, None, None, None
-    # Separamos la respuesta en dos partes
     print(respuesta_encriptada)
+    if b'FINISH' in respuesta_encriptada:
+        print("llegue al finish")
+        return None, None, None, None
+    
     datos = respuesta_encriptada.decode('utf-8').split(" ")
-    return float(datos[0]), float(datos[1]), float(datos[2]), float(datos[3])
+
+    if len(datos) == 4: #Estamos viendo mediciones
+
+        return float(datos[0]), float(datos[1]), float(datos[2]), float(datos[3])
+    
+    elif len(datos) == 8:
+
+        return (float(datos[0]), float(datos[1])),\
+                (float(datos[2]), float(datos[3])),\
+                (float(datos[4]), float(datos[5])),\
+                (float(datos[6]), float(datos[7]))
+    
+        
+    # Separamos la respuesta en dos partes
+
 
     # if len(respuesta_encriptada) == 72:
     #     dato_str1 = respuesta_encriptada[:9].decode('utf-8')
@@ -124,32 +138,32 @@ def leyendo():
             try:
                 temp, press, hum, co = receive_data()
                 if temp is None:
-                    for i in range(len(temperatura)-2):
-                        insertar_ordenado(peaks_tmp, temperatura[i])
-                        insertar_ordenado(peaks_pres, presion[i])
-                        insertar_ordenado(peaks_hum, humedad[i])
-                        insertar_ordenado(peaks_co, concentracion_co[i])
+                    print("Entre al procesamiento de los datos")
+                    window_size =int((len(temperatura) - 6) / 2)
+                    print(window_size)
+                    print(temperatura)
                     data = {
-                        "ventana_temperatura": temperatura[:-2],
-                        "ventana_presion": presion[:-2],
-                        "ventana_humedad": humedad[:-2],
-                        "ventana_concentracion": concentracion_co[:-2],
+                        "ventana_temperatura": temperatura[:window_size],
+                        "ventana_presion": presion[:window_size],
+                        "ventana_humedad": humedad[:window_size],
+                        "ventana_concentracion": concentracion_co[:window_size],
 
-                        "tRMS": temperatura[-2],
-                        "pRMS": presion[-2],
-                        "hRMS": humedad[-2],
-                        "cRMS": concentracion_co[-2],
+                        "tRMS": temperatura[window_size],
+                        "pRMS": presion[window_size],
+                        "hRMS": humedad[window_size],
+                        "cRMS": concentracion_co[window_size],
 
-                        "peaks_temperatura" : [-x for x in peaks_tmp[:6]] if len(peaks_tmp) > 5 else [-x for x in peaks_tmp],
-                        "peaks_presion" : [-x for x in peaks_pres[:6]] if len(peaks_pres) > 5 else [-x for x in peaks_pres],
-                        "peaks_humedad" : [-x for x in peaks_hum[:6]] if len(peaks_hum) > 5 else [-x for x in peaks_hum],
-                        "peaks_concentracion" : [-x for x in peaks_co[:6]] if len(peaks_co) > 5 else [-x for x in peaks_co],
+                        "peaks_temperatura" : temperatura[2*window_size +1 :],
+                        "peaks_presion" : presion[2*window_size +1 :],
+                        "peaks_humedad" : humedad[2*window_size +1 :],
+                        "peaks_concentracion" : concentracion_co[2*window_size +1 :],
 
-                        "FFT_temperatura" : temperatura[-1],
-                        "FFT_presion" : presion[-1],
-                        "FFT_humedad" : humedad[-1],
-                        "FFT_concentracion" : concentracion_co[-1]
+                        "FFT_temperatura" : temperatura[window_size + 1: 2 * window_size + 1],
+                        "FFT_presion" : presion[window_size + 1: 2 * window_size + 1],
+                        "FFT_humedad" : humedad[window_size + 1: 2 * window_size + 1],
+                        "FFT_concentracion" : concentracion_co[window_size + 1: 2 * window_size + 1]
                     }
+                    print("Termine de procesar los datos")
                     return data
                 temperatura.append(temp)
                 presion.append(press)
@@ -169,6 +183,7 @@ def graficar(lista,variable, title, filename):
     plt.savefig(filename)
 
 def mostrar_datos(datos):
+    print("Entre a mostrar datos")
     presiones = datos["ventana_presion"]
     temperaturas = datos["ventana_temperatura"]
     humedades = datos["ventana_humedad"]
@@ -189,6 +204,7 @@ def mostrar_datos(datos):
     FFT_humedad = datos["FFT_humedad"]
     FFT_concentracion = datos["FFT_concentracion"]
 
+    print("Voy a graficar el primer grafico")
     graficar(temperaturas, "Temperatura (°C)", "Temperatura", "temperatura.png")
     print("Tamaño de la ventana: ", len(temperaturas), "\n")
     print("Datos temperatura: ",temperaturas)
@@ -202,13 +218,13 @@ def mostrar_datos(datos):
     print(f"Los 5 datos mas altos fueron: {peaks_presion}")
     print(f"La transformada de fourier fue: {FFT_presion}\n")
 
-    graficar(humedades, "Humedad (????)", "Humedad", "humedad.png") ##### Rellenar unidad de medida
+    graficar(humedades, "Humedad (%%r.h.)", "Humedad", "humedad.png") ##### Rellenar unidad de medida
     print("Datos humedad: ",humedades)
     print(f"El RMS fue de {hRMS}")
     print(f"Los 5 datos mas altos fueron: {peaks_humedad}")
     print(f"La transformada de fourier fue: {FFT_humedad}\n")
 
-    graficar(concentraciones, "Concentración de CO (????)", "Concentracion de CO", "concentracion.png") ##### Rellenar unidad de medida
+    graficar(concentraciones, "Concentración de CO (kΩ)", "Concentracion de CO", "concentracion.png") ##### Rellenar unidad de medida
     print("Datos concentración: ",concentraciones)
     print(f"El RMS fue de {cRMS}")
     print(f"Los 5 datos mas altos fueron: {peaks_concentracion}")
