@@ -5,6 +5,7 @@
 #include <string.h>
 #include <inttypes.h>
 #include <time.h>
+#include <math.h>
 
 #include "driver/i2c.h"
 #include "driver/i2c_master.h"
@@ -261,6 +262,33 @@ void restart_ESP(){
 }
 
 // ------------ BME 688 ------------- //
+
+/**
+ * @brief Funcion que calcula la FFT de un elemnto y guarda el resultado inplace
+ *
+ * @param val Elemento sobre los que se quiere calcular la FFT
+ * @param size Tamano del arreglo
+ * @param real Elemento donde se guardara la parte real
+ * @param imag Elemento donde se guardara la parte imaginaria
+ */
+void calcularFFT(float val, int size, float real, float imag) {
+    for (int n = 0; n < size; n++) {
+        float angulo = 2 * M_PI * k * n / size;
+        float cos_angulo = cos(angulo);
+        float sin_angulo = -sin(angulo);
+        real += array[n] * cos_angulo;
+        imag += array[n] * sin_angulo;
+    }
+    real /= size;
+    imag /= size;
+    array_re[k] = real;
+    array_im[k] = imag;
+}
+
+float modulo(float real, float imag) {
+    return sqrt(real * real + imag * imag);
+}
+
 uint8_t calc_gas_wait(uint16_t dur) {
     // Fuente: BME688 API
     // https://github.com/boschsensortec/BME68x_SensorAPI/blob/master/bme68x.c#L1176
@@ -474,7 +502,7 @@ int bme_check_forced_mode(void) {
     return (tmp == 0b001 && tmp2 == 0x59 && tmp3 == 0x00 && tmp4 == 0b100000 && tmp5 == 0b01010101);
 }
 
-int *bme_calculate(uint32_t temp_adc, uint32_t press_adc, uint32_t hum_adc, uint32_t res_head_range, uint32_t res_heat_val) {
+int *bme_calculate(uint32_t temp_adc, uint32_t press_adc, uint32_t hum_adc, uint32_t gas_adc, uint32_t gas_range) {
     // Arreglo para guardar los datos, la pedimos con malloc
     int *data = (int *)malloc(4 * sizeof(int));
 
@@ -595,8 +623,9 @@ int *bme_calculate(uint32_t temp_adc, uint32_t press_adc, uint32_t hum_adc, uint
     // Datasheet[25]
     // https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme688-ds000.pdf#page=25
 
-    uint8_t addr_par_h1_lbs = 0xE2[0:3], addr_par_h1_msb = 0xE1;
-    uint8_t addr_par_h2_lbs = 0xE2[4:7], addr_par_h2_msb = 0xE3;
+    uint8_t valxE2 = 0xE2;
+    uint8_t addr_par_h1_lbs = valxE2 & 0x0F, addr_par_h1_msb = 0xE3;
+    uint8_t addr_par_h2_lbs = (valxE2 & 0xF0) >> 4, addr_par_h2_msb = 0xE1;
     uint8_t addr_par_h3_lbs = 0xE4;
     uint8_t addr_par_h4_lbs = 0xE5;
     uint8_t addr_par_h5_lbs = 0xE6;
@@ -650,31 +679,24 @@ int *bme_calculate(uint32_t temp_adc, uint32_t press_adc, uint32_t hum_adc, uint
 
     data[2] = hum_comp;
 
-    // Datasheet[27]
-    // https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme688-ds000.pdf#page=27
+    // Datasheet[28]
+    // https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme688-ds000.pdf#page=28
 
-    uint8_t addr_par_g1_lsb = 0xED;
-    uint8_t addr_par_g2_lsb = 0xEB, addr_par_g2_msb = 0xEC;
-    uint8_t addr_par_g3_lsb = 0xEE;
-    uint16_t par_g1;
-    uint16_t par_g2;
-    uint16_t par_g3;
+    int32_t var1_g;
+    int32_t var2_g;
 
-    uint8_t par_g[4];
-    bme_i2c_read(I2C_NUM_0, &addr_par_g1_lsb, par_g, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_g2_lsb, par_g + 1, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_g2_msb, par_g + 2, 1);
-    bme_i2c_read(I2C_NUM_0, &addr_par_g3_lsb, par_g + 3, 1);
+    int calc_gas_res;
+    int gas_res;
 
-    par_g1 = par_g[0];
-    par_g2 = (par_g[2] << 8) | par_g[1];
-    par_g3 = par_g[3];
+    var1_g = UINT32_C(262144) >> gas_range;
+    var2_g = (int32_t)gas_adc - INT32_C(512);
+    var2_g *= UINT32_C(3);
+    var2_g = INT32_C(4096) + var2_g;
+    // multiplying 10000 then dividing then multiplying by 100 instead of multiplying by 1000000 to prevent overflow
+    calc_gas_res = (UINT32_C(10000) * var1_g) / (uint32_t)var2_g;
+    gas_res = calc_gas_res * 100;
 
-    int64_t var1_g;
-    int64_t var2_g;
-    int64_t var3_g;
-    int64_t var4_g;
-    int64_t var5_g;
+    data[3] = gas_res;
 
     return data;
 }
@@ -696,15 +718,22 @@ void bme_read_data(int window, int time) {
 
     uint8_t tmp;
     uint8_t prs;
+    uint8_t hum;
+    uint8_t gas;
+    uint8_t gas_range;
 
     float rms_temp = 0;
     float rms_press = 0;
+    float rms_hum = 0;
+    float rms_gas = 0;
 
     // Se obtienen los datos de temperatura y presion
     //printf("Obteniendo las direcciones de los datos\n");
     uint8_t forced_temp_addr[] = {0x22, 0x23, 0x24};
-    uint8_t forced_press_addr[] = {0x1F, 0x20, 0x21};
+    uint8_t forced_press_addr[] = {0x1F, 0x20, (0x21 & 0xF0) >> 4};
     uint8_t forced_hum_addr[] = {0x25, 0x26};
+    uint8_t forced_gas_addr[] = {0x2C, (0x2D & 0xC0) >> 6};
+    uint8_t forced_gas_range_addr = 0x2D & 0x0F;
 
     //printf("Comenzamos a leer la ventana\n");
     for (int i = 0; i < window; i++) {
@@ -713,6 +742,8 @@ void bme_read_data(int window, int time) {
         uint32_t temp_adc = 0;
         uint32_t press_adc = 0;
         uint32_t hum_adc = 0;
+        uint32_t gas_adc = 0;
+        uint32_t gas_range_adc = 0;
 
         //printf("Forzando modo\n");
         bme_forced_mode();
@@ -736,47 +767,109 @@ void bme_read_data(int window, int time) {
         press_adc = press_adc | (prs & 0xf0) >> 4;
 
         //printf("Leyendo datos de humedad\n");
-        bme_i2c_read(I2C_NUM_0, &forced_hum_addr[0], &prs, 1);
-        hum_adc = hum_adc | prs << 12;
-        bme_i2c_read(I2C_NUM_0, &forced_hum_addr[1], &prs, 1);
-        hum_adc = hum_adc | prs << 4;
+        bme_i2c_read(I2C_NUM_0, &forced_hum_addr[0], &hum, 1);
+        hum_adc = hum_adc | hum << 12;
+        bme_i2c_read(I2C_NUM_0, &forced_hum_addr[1], &hum, 1);
+        hum_adc = hum_adc | hum << 4;
+
+        //printf("Leyendo datos de gas\n");
+        bme_i2c_read(I2C_NUM_0, &forced_gas_addr[0], &gas, 1);
+        gas_adc = gas_adc | gas << 12;
+        bme_i2c_read(I2C_NUM_0, &forced_gas_addr[1], &gas, 1);
+        gas_adc = gas_adc | (gas & 0xf0) >> 4;
+
+        //printf("Leyendo datos de gas range\n");
+        bme_i2c_read(I2C_NUM_0, &forced_gas_range_addr, &gas_range, 1);
+        gas_range_adc = gas_range_adc | gas_range << 12;
 
         //printf("Calculando datos de temperatura y presion\n");
-        int *data = bme_calculate(temp_adc, press_adc, hum_adc, 0);
+        int *data = bme_calculate(temp_adc, press_adc, hum_adc, gas_adc, gas_range_adc);
         uint32_t temp = data[0];
         uint32_t press = data[1];
+        uint32_t hum = data[2];
+        uint32_t gas = data[3];
         free(data);
+
+        float temp_f = (float)temp / 100;
+        float press_f = (float)press / 100;
+        float hum_f = (float)hum / 100;
+        float gas_f = (float)gas / 100;
 
         //Calculamos el RMS de los datos
         //printf("Calculando RMS de los datos\n");
-        float temp_f = (float)temp / 100;
-        float press_f = (float)press / 100;
         rms_temp += (temp_f * temp_f) / window;
         rms_press += (press_f * press_f) / window;
+        rms_hum += (hum_f * hum_f) / window;
+        rms_gas += (gas_f * gas_f) / window;
+
+        // Calculamos la FFT de los datos
+        //printf("Calculando FFT de los datos\n");
+
+        float fft_tmp_real = 0, fft_tmp_imag = 0;
+        float fft_press_real = 0, fft_press_imag = 0;
+        float fft_hum_real = 0, fft_hum_imag = 0;
+        float fft_gas_real = 0, fft_gas_imag = 0;
+
+        calcularFFT(temp_f, window, fft_tmp_real, fft_tmp_imag);
+        calcularFFT(press_f, window, fft_press_real, fft_press_imag);
+        calcularFFT(hum_f, window, fft_hum_real, fft_hum_imag);
+        calcularFFT(gas_f, window, fft_gas_real, fft_gas_imag);
+        float fft_tmp = modulo(fft_tmp_real, fft_tmp_imag);
+        float fft_press = modulo(fft_press_real, fft_press_imag);
+        float fft_hum = modulo(fft_hum_real, fft_hum_imag);
+        float fft_gas = modulo(fft_gas_real, fft_gas_imag);
 
         // Enviamos los datos a la computadora
-        //printf("Enviando datos de temperatura y presion\n");
+        //printf("Enviando datos de temperatura, presion, humedad y concentracion de CO\n");
         char send_temp[20];
+        char send_fft_temp[20];
         char send_press[20];
+        char send_fft_press[20];
+        char send_hum[20];
+        char send_fft_hum[20];
+        char send_gas[20];
+        char send_fft_gas[20];
+
         sprintf(send_temp, "%f", temp_f);
+        sprintf(send_fft_temp, "%f", fft_tmp);
         sprintf(send_press, "%f", press_f);
+        sprintf(send_fft_press, "%f", fft_press);
+        sprintf(send_hum, "%f", hum_f);
+        sprintf(send_fft_hum, "%f", fft_hum);
+        sprintf(send_gas, "%f", gas_f);
+        sprintf(send_fft_gas, "%f", fft_gas);
         uart_write_bytes(UART_NUM, send_temp, strlen(send_temp));
+        uart_write_bytes(UART_NUM, send_fft_temp, strlen(send_fft_temp));
         uart_write_bytes(UART_NUM, send_press, strlen(send_press));
+        uart_write_bytes(UART_NUM, send_fft_press, strlen(send_fft_press));
+        uart_write_bytes(UART_NUM, send_hum, strlen(send_hum));
+        uart_write_bytes(UART_NUM, send_fft_hum, strlen(send_fft_hum));
+        uart_write_bytes(UART_NUM, send_gas, strlen(send_gas));
+        uart_write_bytes(UART_NUM, send_fft_gas, strlen(send_fft_gas));
     }
     vTaskDelay(pdMS_TO_TICKS(time+2000));
+
     // Calculamos el RMS de los datos
     printf("Calculando RMS de los datos\n");
     float final_rms_temp = sqrt(rms_temp);
     float final_rms_press = sqrt(rms_press);
+    float final_rms_hum = sqrt(rms_hum);
+    float final_rms_gas = sqrt(rms_gas);
 
     // Enviamos los datos a la computadora
     printf("Enviando RMS de los datos\n");
     char send_tmp_rms[20];
     char send_press_rms[20];
+    char send_hum_rms[20];
+    char send_gas_rms[20];
     sprintf(send_tmp_rms, "%f", final_rms_temp);
     sprintf(send_press_rms, "%f", final_rms_press);
+    sprintf(send_hum_rms, "%f", final_rms_hum);
+    sprintf(send_gas_rms, "%f", final_rms_gas);
     uart_write_bytes(UART_NUM, send_tmp_rms, strlen(send_tmp_rms));
     uart_write_bytes(UART_NUM, send_press_rms, strlen(send_press_rms));
+    uart_write_bytes(UART_NUM, send_hum_rms, strlen(send_hum_rms));
+    uart_write_bytes(UART_NUM, send_gas_rms, strlen(send_gas_rms));
     vTaskDelay(pdMS_TO_TICKS(time+2000));
 }
 
