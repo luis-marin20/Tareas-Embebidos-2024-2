@@ -28,9 +28,9 @@ def receive_data():
     """ Funcion que recibe n floats de la ESP32 
     y los imprime en consola """
     respuesta_encriptada = receive_response()
-    print(respuesta_encriptada)
+    # Descomente la linea de abajo para ver los datos que envia la ESP32 en tiempo real
+    # print(respuesta_encriptada)
     if b'FINISH' in respuesta_encriptada:
-        print("llegue al finish")
         return None, None, None, None
     
     datos = respuesta_encriptada.decode('utf-8').split(" ")
@@ -45,37 +45,6 @@ def receive_data():
                 (float(datos[2]), float(datos[3])),\
                 (float(datos[4]), float(datos[5])),\
                 (float(datos[6]), float(datos[7]))
-    
-        
-    # Separamos la respuesta en dos partes
-
-
-    # if len(respuesta_encriptada) == 72:
-    #     dato_str1 = respuesta_encriptada[:9].decode('utf-8')
-    #     dato_fft1 = respuesta_encriptada[9:18].decode('utf-8')
-    #     dato_str2 = respuesta_encriptada[18:27].decode('utf-8')
-    #     dato_fft2 = respuesta_encriptada[27:36].decode('utf-8')
-    #     dato_str3 = respuesta_encriptada[36:45].decode('utf-8')
-    #     dato_fft3 = respuesta_encriptada[45:54].decode('utf-8')
-    #     dato_str4 = respuesta_encriptada[54:63].decode('utf-8')
-    #     dato_fft4 = respuesta_encriptada[63::].decode('utf-8')
-
-    #     temp = [float(dato_str1), float(dato_fft1)]
-    #     press = [float(dato_str2), float(dato_fft2)]
-    #     hum = [float(dato_str3), float(dato_fft3)]
-    #     co = [float(dato_str4), float(dato_fft4)]
-    #     return temp, press, hum, co
-    # else:
-    #     dato_str1 = respuesta_encriptada[:9].decode('utf-8')
-    #     dato_str2 = respuesta_encriptada[9:18].decode('utf-8')
-    #     dato_str3 = respuesta_encriptada[18:27].decode('utf-8')
-    #     dato_str4 = respuesta_encriptada[27::].decode('utf-8')
-
-    #     temp = [float(dato_str1), None]
-    #     press = [float(dato_str2), None]
-    #     hum = [float(dato_str3), None]
-    #     co = [float(dato_str4), None]
-    #     return temp, press, hum, co
 
 def send_end_message():
     """ Funcion para enviar un mensaje de finalizacion a la ESP32 """
@@ -138,10 +107,7 @@ def leyendo():
             try:
                 temp, press, hum, co = receive_data()
                 if temp is None:
-                    print("Entre al procesamiento de los datos")
                     window_size =int((len(temperatura) - 6) / 2)
-                    print(window_size)
-                    print(temperatura)
                     data = {
                         "ventana_temperatura": temperatura[:window_size],
                         "ventana_presion": presion[:window_size],
@@ -163,7 +129,6 @@ def leyendo():
                         "FFT_humedad" : humedad[window_size + 1: 2 * window_size + 1],
                         "FFT_concentracion" : concentracion_co[window_size + 1: 2 * window_size + 1]
                     }
-                    print("Termine de procesar los datos")
                     return data
                 temperatura.append(temp)
                 presion.append(press)
@@ -183,7 +148,6 @@ def graficar(lista,variable, title, filename):
     plt.savefig(filename)
 
 def mostrar_datos(datos):
-    print("Entre a mostrar datos")
     presiones = datos["ventana_presion"]
     temperaturas = datos["ventana_temperatura"]
     humedades = datos["ventana_humedad"]
@@ -204,7 +168,6 @@ def mostrar_datos(datos):
     FFT_humedad = datos["FFT_humedad"]
     FFT_concentracion = datos["FFT_concentracion"]
 
-    print("Voy a graficar el primer grafico")
     graficar(temperaturas, "Temperatura (°C)", "Temperatura", "temperatura.png")
     print("Tamaño de la ventana: ", len(temperaturas), "\n")
     print("Datos temperatura: ",temperaturas)
@@ -218,7 +181,7 @@ def mostrar_datos(datos):
     print(f"Los 5 datos mas altos fueron: {peaks_presion}")
     print(f"La transformada de fourier fue: {FFT_presion}\n")
 
-    graficar(humedades, "Humedad (%%r.h.)", "Humedad", "humedad.png") ##### Rellenar unidad de medida
+    graficar(humedades, "Humedad (%r.h.)", "Humedad", "humedad.png") ##### Rellenar unidad de medida
     print("Datos humedad: ",humedades)
     print(f"El RMS fue de {hRMS}")
     print(f"Los 5 datos mas altos fueron: {peaks_humedad}")
