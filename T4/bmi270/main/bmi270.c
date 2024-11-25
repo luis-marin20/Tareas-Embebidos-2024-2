@@ -19,6 +19,7 @@
 #define ACK_VAL 0x0
 #define NACK_VAL 0x1
 #define Fodr 800
+#define UART_NUM
 
 esp_err_t ret = ESP_OK;
 esp_err_t ret2 = ESP_OK;
@@ -614,6 +615,173 @@ void check_initialization(void) {
     }
 }
 
+// Setea la ventana en la nvs
+void set_window_nvs(int ventana) {
+    ventana = (int32_t)ventana;
+    // Initialize NVS
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        // NVS partition was truncated and needs to be erased
+        // Retry nvs_flash_init
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK( err );
+
+    // Open
+    printf("\n");
+    printf("Opening Non-Volatile Storage (NVS) handle... ");
+    nvs_handle_t my_handle;
+    err = nvs_open("storage", NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) {
+        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
+    } else {
+        printf("Done\n");
+
+        // Read
+        printf("Reading window from NVS ... ");
+        int32_t window = 20; // value will default to 20, if not set yet in NVS
+        err = nvs_get_i32(my_handle, "window", &window);
+        switch (err) {
+            case ESP_OK:
+                printf("Done\n");
+                printf("window = %" PRIu32 "\n", window);
+                break;
+            case ESP_ERR_NVS_NOT_FOUND:
+                printf("The value is not initialized yet!\n");
+                break;
+            default :
+                printf("Error (%s) reading!\n", esp_err_to_name(err));
+        }
+
+        // Write
+        printf("Updating restart counter in NVS ... ");
+        window = ventana;
+        err = nvs_set_i32(my_handle, "window", window);
+        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+
+        // Commit written value.
+        // After setting any values, nvs_commit() must be called to ensure changes are written
+        // to flash storage. Implementations may write to storage at other times,
+        // but this is not guaranteed.
+        printf("Committing updates in NVS ... ");
+        err = nvs_commit(my_handle);
+        printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+
+        // Close
+        nvs_close(my_handle);
+    }
+}
+
+// Obtine el valor de la ventana en la nvs. Si no existe aún, retorna 20 y lo setea en 20
+int get_window_nvs(void){
+    // Initialize NVS
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        // NVS partition was truncated and needs to be erased
+        // Retry nvs_flash_init
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK( err );
+
+    // Open
+    printf("\n");
+    printf("Opening Non-Volatile Storage (NVS) handle... ");
+    nvs_handle_t my_handle;
+    err = nvs_open("storage", NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) {
+        printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
+        return -1;
+    } else {
+        printf("Done\n");
+
+        // Read
+        printf("Reading window from NVS ... ");
+        int32_t window = 20; // value will default to 20, if not set yet in NVS
+        err = nvs_get_i32(my_handle, "window", &window);
+        switch (err) {
+            case ESP_OK:
+                printf("Done\n");
+                printf("window = %" PRIu32 "\n", window);
+                break;
+            case ESP_ERR_NVS_NOT_FOUND:
+                printf("The value is not initialized yet!\n");
+                break;
+            default :
+                printf("Error (%s) reading!\n", esp_err_to_name(err));
+        }
+
+        // Close
+        nvs_close(my_handle);
+        return window;
+    }
+}
+
+// Calcula la RMS de un array de floats
+float calc_RMS(float *arr, int ventana){
+    float raiz = 0;
+    float sum = 0;
+
+    for(int i = 0; i < ventana; i++){
+        sum += arr[i] * arr[i];
+    }
+
+    raiz = sqrt(sum/(float)ventana);
+    return raiz;
+}
+
+// reinicia la ESP y termina la conexión
+void restart_ESP(){
+    // Reiniciar la ESP y terminar conexión
+    for (int i = 10; i >= 0; i--) {
+        printf("Restarting in %d seconds...\n", i);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+    printf("Restarting now.\n");
+    fflush(stdout);
+    esp_restart();
+}
+
+/**
+ * @brief Funcion que calcula la FFT de un arreglo y guarda el resultado inplace
+ *
+ * @param array Arreglo de elementos sobre los que se quiere calcular la FFT
+ * @param size Tamano del arreglo
+ * @param array_re Direccion del arreglo donde se guardara la parte real. Debe ser de tamano size
+ * @param array_im Direccion del arreglo donde se guardara la parte imaginaria. Debe ser de tamano size
+ */
+void calcularFFT(float *array, int size, float *array_re, float *array_im) {
+    for (int k = 0; k < size; k++) {
+        float real = 0;
+        float imag = 0;
+
+        for (int n = 0; n < size; n++) {
+            float angulo = 2 * M_PI * k * n / size;
+            float cos_angulo = cos(angulo);
+            float sin_angulo = -sin(angulo);
+
+            real += array[n] * cos_angulo;
+            imag += array[n] * sin_angulo;
+        }
+        real /= size;
+        imag /= size;
+        array_re[k] = real;
+        array_im[k] = imag;
+    }
+}
+
+void modulo(float *real, float *imag, float *mod, int size) {
+    for (int i = 0; i < size; i++) {
+        mod[i] = sqrt(real[i] * real[i] + imag[i] * imag[i]);
+    }
+}
+
+// Función de comparación para ordenar de mayor a menor
+int comparar(const void *a, const void *b) {
+    return (*(int*)b - *(int*)a);  // Cambiar el orden de comparación
+}
+
 void internal_status(void) {
     uint8_t reg_internalstatus = 0x21;
     uint8_t tmp;
@@ -623,27 +791,113 @@ void internal_status(void) {
     printf("Internal Status: %2X\n\n", tmp);
 }
 
-void lectura(void) {
+void lectura(int window) {
     uint8_t reg_intstatus = 0x03, tmp;
     uint8_t addr_acc_z_lsb = 0x10;
     uint8_t addr_acc_z_msb = 0x11;
-    uint16_t acc_z;
+    uint8_t addr_acc_y_lsb = 0x0E;
+    uint8_t addr_acc_y_msb = 0x0F;
+    uint8_t addr_acc_x_lsb = 0x0C;
+    uint8_t addr_acc_x_msb = 0x0D;
 
-    while (1) {
+    uint8_t addr_gyr_z_lsb = 0x16;
+    uint8_t addr_gyr_z_msb = 0x17;
+    uint8_t addr_gyr_y_lsb = 0x14;
+    uint8_t addr_gyr_y_msb = 0x15;
+    uint8_t addr_gyr_x_lsb = 0x12;
+    uint8_t addr_gyr_x_msb = 0x13;
+
+    uint16_t acc_z;
+    uint16_t acc_y;
+    uint16_t acc_x;
+
+    uint16_t gyr_z;
+    uint16_t gyr_y;
+    uint16_t gyr_x;
+
+    float data_acc_z[window];
+    float data_acc_y[window];
+    float data_acc_x[window];
+
+    float data_gyr_z[window];
+    float data_gyr_y[window];
+    float data_gyr_x[window];
+
+    float rms_acc_x = 0;
+    float rms_acc_y = 0;
+    float rms_acc_z = 0;
+    float rms_gyr_x = 0;
+    float rms_gyr_y = 0;
+    float rms_gyr_z = 0;
+    for (int i = 0; i < window; i++){
         bmi_read(&reg_intstatus, &tmp, 1);
         if ((tmp & 0b10000000) == 0x80) {
+            // Leyendo datos de acelerómetro
+            ret = bmi_read(&addr_acc_x_msb, &tmp, 1);
+            acc_x = tmp;
+            ret = bmi_read(&addr_acc_x_lsb, &tmp, 1);
+            acc_x = (acc_z << 8) | tmp;
+            data_acc_x[i] = acc_x;
+            ret = bmi_read(&addr_acc_y_msb, &tmp, 1);
+            acc_y = tmp;
+            ret = bmi_read(&addr_acc_y_lsb, &tmp, 1);
+            acc_y = (acc_z << 8) | tmp;
+            data_acc_y[i] = acc_y;
             ret = bmi_read(&addr_acc_z_msb, &tmp, 1);
             acc_z = tmp;
             ret = bmi_read(&addr_acc_z_lsb, &tmp, 1);
             acc_z = (acc_z << 8) | tmp;
+            data_acc_z[i] = acc_z; 
 
+            // Leyendo datos de giroscopio
+            ret = bmi_read(&addr_gyr_x_msb, &tmp, 1);
+            gyr_x = tmp;
+            ret = bmi_read(&addr_gyr_x_lsb, &tmp, 1);
+            gyr_x = (acc_z << 8) | tmp;
+            data_gyr_x[i] = gyr_x;
+            ret = bmi_read(&addr_gyr_y_msb, &tmp, 1);
+            gyr_y = tmp;
+            ret = bmi_read(&addr_gyr_y_lsb, &tmp, 1);
+            gyr_y = (acc_z << 8) | tmp;
+            data_gyr_y[i] = gyr_y;
+            ret = bmi_read(&addr_gyr_z_msb, &tmp, 1);
+            gyr_z = tmp;
+            ret = bmi_read(&addr_gyr_z_lsb, &tmp, 1);
+            gyr_z = (acc_z << 8) | tmp;
+            data_gyr_z[i] = gyr_z;
+    
             printf("acc_z: %f g\n", (int16_t)acc_z * (8.000 / 32768));
+            
+            uart_write_bytes(UART_NUM, acc_z, strlen(acc_z));
+            uart_write_bytes(UART_NUM, " ", 1);
+            uart_write_bytes(UART_NUM, acc_y, strlen(acc_y));
+            uart_write_bytes(UART_NUM, " ", 1);
+            uart_write_bytes(UART_NUM, acc_x, strlen(acc_x));
+            uart_write_bytes(UART_NUM, " ", 1);
+
+            uart_write_bytes(UART_NUM, gyr_z, strlen(gyr_z));
+            uart_write_bytes(UART_NUM, " ", 1);
+            uart_write_bytes(UART_NUM, gyr_y, strlen(gyr_y));
+            uart_write_bytes(UART_NUM, " ", 1);
+            uart_write_bytes(UART_NUM, gyr_x, strlen(gyr_x));
+            uart_write_bytes(UART_NUM, " ", 1);
 
             if (ret != ESP_OK) {
                 printf("Error lectura: %s \n", esp_err_to_name(ret));
             }
         }
     }
+    // Calculamos el RMS de los datos
+    printf("Calculando RMS de los datos\n");
+    float final_acc_x = sqrt(rms_temp);
+    float final_acc_y = sqrt(rms_press);
+    float final_acc_z = sqrt(rms_hum);
+    float final_gyr_x = sqrt(rms_gas);
+    float final_gyr_y = sqrt(rms_gas);
+    float final_gyr_z = sqrt(rms_gas);
+    
+
+    
 }
 
 void bmipowermode(void) {
