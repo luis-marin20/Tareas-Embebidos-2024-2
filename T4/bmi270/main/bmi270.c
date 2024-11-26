@@ -24,6 +24,8 @@
 esp_err_t ret = ESP_OK;
 esp_err_t ret2 = ESP_OK;
 
+_CRTIMP __cdecl __MINGW_NOTHROW  int atoi (const char *);
+
 uint16_t val0[6];
 
 /*! @name  Global array that stores the configuration file of BMI270 */
@@ -791,7 +793,7 @@ void internal_status(void) {
     printf("Internal Status: %2X\n\n", tmp);
 }
 
-void lectura(int window) {
+void lectura(int window, int time) {
     uint8_t reg_intstatus = 0x03, tmp;
     uint8_t addr_acc_z_lsb = 0x10;
     uint8_t addr_acc_z_msb = 0x11;
@@ -865,6 +867,15 @@ void lectura(int window) {
             ret = bmi_read(&addr_gyr_z_lsb, &tmp, 1);
             gyr_z = (acc_z << 8) | tmp;
             data_gyr_z[i] = gyr_z;
+
+            //Calculamos el RMS de los datos
+            //printf("Calculando RMS de los datos\n");
+            rms_acc_x += (acc_x * acc_x) / window;
+            rms_acc_y += (acc_y * acc_y) / window;
+            rms_acc_z += (acc_z * acc_z) / window;
+            rms_gyr_x += (gyr_x * gyr_x) / window;
+            rms_gyr_y += (gyr_y * gyr_y) / window;
+            rms_gyr_z += (gyr_z * gyr_z) / window;
     
             printf("acc_z: %f g\n", (int16_t)acc_z * (8.000 / 32768));
             
@@ -889,21 +900,155 @@ void lectura(int window) {
     }
     // Calculamos el RMS de los datos
     printf("Calculando RMS de los datos\n");
-    float final_acc_x = sqrt(rms_temp);
-    float final_acc_y = sqrt(rms_press);
-    float final_acc_z = sqrt(rms_hum);
-    float final_gyr_x = sqrt(rms_gas);
-    float final_gyr_y = sqrt(rms_gas);
-    float final_gyr_z = sqrt(rms_gas);
-    
+    float final_rms_acc_x = sqrt(rms_acc_x);
+    float final_rms_acc_y = sqrt(rms_acc_y);
+    float final_rms_acc_z = sqrt(rms_acc_z);
+    float final_rms_gyr_x = sqrt(rms_gyr_x);
+    float final_rms_gyr_y = sqrt(rms_gyr_y);
+    float final_rms_gyr_z = sqrt(rms_gyr_z);
 
+    // Calculamos la FFT de los datos
+    float fft_acc_x_real[window], fft_acc_x_imag[window];
+    float fft_acc_y_real[window], fft_acc_y_imag[window];
+    float fft_acc_z_real[window], fft_acc_z_imag[window];
+    float fft_gyr_x_real[window], fft_gyr_x_imag[window];
+    float fft_gyr_y_real[window], fft_gyr_y_imag[window];
+    float fft_gyr_z_real[window], fft_gyr_z_imag[window];
+
+    calcularFFT(data_acc_x, window, fft_acc_x_real, fft_acc_x_imag);
+    calcularFFT(data_acc_y, window, fft_acc_y_real, fft_acc_y_imag);
+    calcularFFT(data_acc_z, window, fft_acc_z_real, fft_acc_z_imag);
+    calcularFFT(data_gyr_x, window, fft_gyr_x_real, fft_gyr_x_imag);
+    calcularFFT(data_gyr_y, window, fft_gyr_y_real, fft_gyr_y_imag);
+    calcularFFT(data_gyr_z, window, fft_gyr_z_real, fft_gyr_z_imag);
     
+    // Calculo de los 5 peaks
+    printf("Calculando los 5 peaks de los datos\n");
+    qsort(data_acc_x, window, sizeof(float), comparar);
+    qsort(data_acc_y, window, sizeof(float), comparar);
+    qsort(data_acc_z, window, sizeof(float), comparar);
+    qsort(data_gyr_x, window, sizeof(float), comparar);
+    qsort(data_gyr_y, window, sizeof(float), comparar);
+    qsort(data_gyr_z, window, sizeof(float), comparar);
+
+    // Enviamos los datos de RMS
+    printf("Enviando RMS de los datos\n");
+    char send_acc_x_rms[20];
+    char send_acc_y_rms[20];
+    char send_acc_z_rms[20];
+    char send_gyr_x_rms[20];
+    char send_gyr_y_rms[20];
+    char send_gyr_z_rms[20];
+    
+    sprintf(send_acc_x_rms, "%f", final_rms_acc_x);
+    sprintf(send_acc_y_rms, "%f", final_rms_acc_y);
+    sprintf(send_acc_z_rms, "%f", final_rms_acc_z);
+    sprintf(send_gyr_x_rms, "%f", final_rms_gyr_x);
+    sprintf(send_gyr_y_rms, "%f", final_rms_gyr_y);
+    sprintf(send_gyr_z_rms, "%f", final_rms_gyr_z);
+    uart_write_bytes(UART_NUM, send_acc_x_rms, strlen(send_acc_x_rms));
+    uart_write_bytes(UART_NUM, " ", 1);
+    uart_write_bytes(UART_NUM, send_acc_y_rms, strlen(send_acc_y_rms));
+    uart_write_bytes(UART_NUM, " ", 1);
+    uart_write_bytes(UART_NUM, send_acc_z_rms, strlen(send_acc_z_rms));
+    uart_write_bytes(UART_NUM, " ", 1);
+    uart_write_bytes(UART_NUM, send_gyr_x_rms, strlen(send_gyr_x_rms));
+    uart_write_bytes(UART_NUM, " ", 1);
+    uart_write_bytes(UART_NUM, send_gyr_y_rms, strlen(send_gyr_y_rms));
+    uart_write_bytes(UART_NUM, " ", 1);
+    uart_write_bytes(UART_NUM, send_gyr_z_rms, strlen(send_gyr_z_rms));
+    uart_write_bytes(UART_NUM, " ", 1);
+
+
+    vTaskDelay(pdMS_TO_TICKS(time+2000));
+
+    printf("Enviando FFT de los datos\n");
+    vTaskDelay(pdMS_TO_TICKS(time));
+    for (int i=0; i<window; i++){
+
+        vTaskDelay(pdMS_TO_TICKS(time));
+
+        char send_acc_x_fft_real[20], send_acc_x_fft_imag[20];
+        char send_acc_y_fft_real[20], send_acc_y_fft_imag[20];
+        char send_acc_z_fft_real[20], send_acc_z_fft_imag[20];
+        char send_gyr_x_fft_real[20], send_gyr_x_fft_imag[20];
+        char send_gyr_y_fft_real[20], send_gyr_y_fft_imag[20];
+        char send_gyr_z_fft_real[20], send_gyr_z_fft_imag[20];
+        sprintf(send_acc_x_fft_real, "%f", fft_acc_x_real[i]);
+        sprintf(send_acc_x_fft_imag, "%f", fft_acc_x_imag[i]);
+        sprintf(send_acc_y_fft_real, "%f", fft_acc_y_real[i]);
+        sprintf(send_acc_y_fft_imag, "%f", fft_acc_y_imag[i]);
+        sprintf(send_acc_z_fft_real, "%f", fft_acc_z_real[i]);
+        sprintf(send_acc_z_fft_imag, "%f", fft_acc_z_imag[i]);
+        sprintf(send_gyr_x_fft_real, "%f", fft_gyr_x_real[i]);
+        sprintf(send_gyr_x_fft_imag, "%f", fft_gyr_x_imag[i]);
+        sprintf(send_gyr_y_fft_real, "%f", fft_gyr_y_real[i]);
+        sprintf(send_gyr_y_fft_imag, "%f", fft_gyr_y_imag[i]);
+        sprintf(send_gyr_z_fft_real, "%f", fft_gyr_z_real[i]);
+        sprintf(send_gyr_z_fft_imag, "%f", fft_gyr_z_imag[i]);
+
+        uart_write_bytes(UART_NUM, send_acc_x_fft_real, strlen(send_acc_x_fft_real));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_acc_x_fft_imag, strlen(send_acc_x_fft_imag));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_acc_y_fft_real, strlen(send_acc_y_fft_real));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_acc_y_fft_imag, strlen(send_acc_y_fft_imag));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_acc_z_fft_real, strlen(send_acc_z_fft_real));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_acc_z_fft_imag, strlen(send_acc_z_fft_imag));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_gyr_x_fft_real, strlen(send_gyr_x_fft_real));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_gyr_x_fft_imag, strlen(send_gyr_x_fft_imag));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_gyr_y_fft_real, strlen(send_gyr_y_fft_real));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_gyr_y_fft_imag, strlen(send_gyr_y_fft_imag));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_gyr_z_fft_real, strlen(send_gyr_z_fft_real));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_gyr_z_fft_imag, strlen(send_gyr_z_fft_imag));
+        uart_write_bytes(UART_NUM, " ", 1);
+
+        vTaskDelay(pdMS_TO_TICKS(time));
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(time+2000));
+    // Enviamos los 5 peaks
+    printf("Enviando los 5 peaks de los datos\n");
+    for (int i=0; i<5; i++) {
+        vTaskDelay(pdMS_TO_TICKS(time));
+        char send_acc_x_peak[20], send_acc_y_peak[20], send_acc_z_peak[20];
+        char send_gyr_x_peak[20], send_gyr_y_peak[20], send_gyr_z_peak[20];
+        sprintf(send_acc_x_peak, "%f", data_acc_x[i]);
+        sprintf(send_acc_y_peak, "%f", data_acc_y[i]);
+        sprintf(send_acc_z_peak, "%f", data_acc_z[i]);
+        sprintf(send_gyr_x_peak, "%f", data_gyr_x[i]);
+        sprintf(send_gyr_y_peak, "%f", data_gyr_y[i]);
+        sprintf(send_gyr_z_peak, "%f", data_gyr_z[i]);
+        uart_write_bytes(UART_NUM, send_acc_x_peak, strlen(send_acc_x_peak));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_acc_y_peak, strlen(send_acc_y_peak));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_acc_z_peak, strlen(send_acc_z_peak));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_gyr_x_peak, strlen(send_gyr_x_peak));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_gyr_y_peak, strlen(send_gyr_y_peak));
+        uart_write_bytes(UART_NUM, " ", 1);
+        uart_write_bytes(UART_NUM, send_gyr_z_peak, strlen(send_gyr_z_peak));
+        uart_write_bytes(UART_NUM, " ", 1);
+        vTaskDelay(pdMS_TO_TICKS(time));
+    }
+    vTaskDelay(pdMS_TO_TICKS(time+2000));
 }
 
 void bmipowermode(void) {
     // PWR_CTRL: disable auxiliary sensor, gryo and temp; acc on
     // 400Hz en datos acc, filter: performance optimized, acc_range +/-8g (1g = 9.80665 m/s2, alcance max: 78.4532 m/s2, 16 bit= 65536 => 1bit = 78.4532/32768 m/s2)
-    uint8_t reg_pwr_ctrl = 0x7D, val_pwr_ctrl = 0x04;
+    uint8_t reg_pwr_ctrl = 0x7D, val_pwr_ctrl = 0x06;
     uint8_t reg_acc_conf = 0x40, val_acc_conf;
     uint8_t reg_pwr_conf = 0x7C, val_pwr_conf = 0x00;
 
@@ -928,6 +1073,12 @@ void bmipowermode(void) {
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 }
 
+// Read UART_num for input with timeout of 1 sec
+int serial_read(char *buffer, int size){
+    int len = uart_read_bytes(UART_NUM, (uint8_t*)buffer, size, pdMS_TO_TICKS(1000));
+    return len;
+}
+
 void app_main(void) {
     ESP_ERROR_CHECK(bmi_init());
     softreset();
@@ -937,5 +1088,42 @@ void app_main(void) {
     bmipowermode();
     internal_status();
     printf("Comienza lectura\n\n");
-    lectura();
+    // Esperamos respuesta de la computadora
+    //printf("Start program\n\n");
+    char dataResponse1[6];
+    // char *message = "Data received";
+    while (1) {
+        int rLen = serial_read(dataResponse1, 6);
+        if (rLen > 0) {
+            if (strcmp(dataResponse1, "BEGIN") == 0) {
+                uart_write_bytes(UART_NUM, "OK\0", 3);
+                // printf("%s: %s\n", message, dataResponse1);
+                //printf("Iniciando lectura\n");
+                // Obtenemos el tamaño de la ventana
+                int ventana = get_window_nvs();
+                // printf("Ventana obtenida: %d\n", ventana);
+                // uart_write_bytes(UART_NUM, (char *)ventana, 6);
+                lectura(ventana, 1000);
+                uart_write_bytes(UART_NUM, "FINISH\0", 7);
+                //printf("Lectura finalizada\n\n");
+            }
+            else if (strcmp(dataResponse1, "END") == 0) {
+                //printf("Reiniciando ESP\n\n");
+                uart_write_bytes(UART_NUM, "CLOSED\0", 7);
+                restart_ESP();
+                //printf("ESP reiniciada\n\n");
+                break;
+            }
+            else {
+                //printf("Iniciando cambio de ventana\n");
+                // Si caemos aca es porque la computadora quiere que cambiemos el valor de la ventana, valor que fue enviado en forma de string
+                int ventana = atoi(dataResponse1);
+                //printf("Cambio de ventana a %d\n", ventana);
+
+                // Seteamos la ventana en la nvs
+                set_window_nvs(ventana);
+                //printf("Ventana seteada\n\n");
+            }
+        }
+    }
 }
