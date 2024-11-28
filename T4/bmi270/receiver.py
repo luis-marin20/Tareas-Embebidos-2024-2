@@ -305,7 +305,7 @@ class MainWindow(QMainWindow):
         sys.exit()
     
 class DataWindow(QWidget):
-    def __init__(self, data):
+    def __init__(self):
         super().__init__()
         data = solicitar_ventana()
         table_data = mostrar_datos(data)
