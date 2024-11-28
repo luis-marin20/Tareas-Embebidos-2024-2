@@ -54,3 +54,4 @@ dkms.conf
 */build
 .vscode
 *.png
+/T4/bmi270/build

@@ -1,9 +1,22 @@
+#include <float.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
+#include <time.h>
+#include <math.h>
 
+#include "driver/i2c.h"
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
+#include "driver/uart.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_system.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 #include "esp_task.h"
 #include "math.h"
 #include "sdkconfig.h"
@@ -878,19 +891,31 @@ void lectura(int window, int time) {
             rms_gyr_z += (gyr_z * gyr_z) / window;
     
             printf("acc_z: %f g\n", (int16_t)acc_z * (8.000 / 32768));
-            
-            uart_write_bytes(UART_NUM, acc_z, strlen(acc_z));
+
+            char send_acc_x[20];
+            char send_acc_y[20];
+            char send_acc_z[20];
+            sprintf(send_acc_x, "%f", (int16_t)acc_x * (8.000 / 32768));
+            sprintf(send_acc_y, "%f", (int16_t)acc_y * (8.000 / 32768));
+            sprintf(send_acc_z, "%f", (int16_t)acc_z * (8.000 / 32768));
+            uart_write_bytes(UART_NUM, send_acc_x, strlen(send_acc_x));
             uart_write_bytes(UART_NUM, " ", 1);
-            uart_write_bytes(UART_NUM, acc_y, strlen(acc_y));
+            uart_write_bytes(UART_NUM, send_acc_y, strlen(send_acc_y));
             uart_write_bytes(UART_NUM, " ", 1);
-            uart_write_bytes(UART_NUM, acc_x, strlen(acc_x));
+            uart_write_bytes(UART_NUM, send_acc_z, strlen(send_acc_z));
             uart_write_bytes(UART_NUM, " ", 1);
 
-            uart_write_bytes(UART_NUM, gyr_z, strlen(gyr_z));
+            char send_gyr_x[20];
+            char send_gyr_y[20];
+            char send_gyr_z[20];
+            sprintf(send_gyr_x, "%f", (int16_t)gyr_x * (2000.000 / 32768));
+            sprintf(send_gyr_y, "%f", (int16_t)gyr_y * (2000.000 / 32768));
+            sprintf(send_gyr_z, "%f", (int16_t)gyr_z * (2000.000 / 32768));
+            uart_write_bytes(UART_NUM, send_gyr_z, strlen(send_gyr_z));
             uart_write_bytes(UART_NUM, " ", 1);
-            uart_write_bytes(UART_NUM, gyr_y, strlen(gyr_y));
+            uart_write_bytes(UART_NUM, send_gyr_y, strlen(send_gyr_y));
             uart_write_bytes(UART_NUM, " ", 1);
-            uart_write_bytes(UART_NUM, gyr_x, strlen(gyr_x));
+            uart_write_bytes(UART_NUM, send_gyr_x, strlen(send_gyr_x));
             uart_write_bytes(UART_NUM, " ", 1);
 
             if (ret != ESP_OK) {
