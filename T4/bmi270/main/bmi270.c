@@ -32,12 +32,12 @@
 #define ACK_VAL 0x0
 #define NACK_VAL 0x1
 #define Fodr 800
-#define UART_NUM
+#define UART_NUM UART_NUM_0  // UART port number
 
 esp_err_t ret = ESP_OK;
 esp_err_t ret2 = ESP_OK;
 
-_CRTIMP __cdecl __MINGW_NOTHROW  int atoi (const char *);
+//_CRTIMP __cdecl __MINGW_NOTHROW  int atoi (const char *);
 
 uint16_t val0[6];
 
@@ -850,16 +850,16 @@ void lectura(int window, int time) {
             // Leyendo datos de acelerómetro
             ret = bmi_read(&addr_acc_x_msb, &tmp, 1);
             acc_x = tmp;
+            acc_z = tmp;
+            acc_y = tmp;
             ret = bmi_read(&addr_acc_x_lsb, &tmp, 1);
             acc_x = (acc_z << 8) | tmp;
             data_acc_x[i] = acc_x;
             ret = bmi_read(&addr_acc_y_msb, &tmp, 1);
-            acc_y = tmp;
             ret = bmi_read(&addr_acc_y_lsb, &tmp, 1);
             acc_y = (acc_z << 8) | tmp;
             data_acc_y[i] = acc_y;
             ret = bmi_read(&addr_acc_z_msb, &tmp, 1);
-            acc_z = tmp;
             ret = bmi_read(&addr_acc_z_lsb, &tmp, 1);
             acc_z = (acc_z << 8) | tmp;
             data_acc_z[i] = acc_z; 
