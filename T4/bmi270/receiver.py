@@ -22,6 +22,7 @@ ser = serial.Serial(PORT, BAUD_RATE, timeout = 1)
 def insertar_ordenado(lista, dato):
     """ Funcion para insertar un dato en una lista ordenada """
     bisect.insort(lista, -dato)
+
 def send_message(message):
     """ Funcion para enviar un mensaje a la ESP32 """
     ser.write(message)
@@ -35,10 +36,10 @@ def receive_data():
     """ Funcion que recibe tres floats (fff) de la ESP32 
     y los imprime en consola """
     respuesta_encriptada = receive_response()
-    # Para poder ver los datos que envía la ESP:
-            #print(f"Data = {respuesta_encriptada}")
-            #data = unpack("fff", respuesta_encriptada)
-            #print(f'Received: {data}')
+    #Para poder ver los datos que envía la ESP:
+    print(f"Data = {respuesta_encriptada}")
+    data = unpack("fff", respuesta_encriptada)
+    print(f'Received: {data}')
 
     if b'FINISH' in respuesta_encriptada:
         return None, None, None, None
@@ -106,12 +107,12 @@ def leyendo():
     gyr_x = []
     gyr_y = []
     gyr_z = []
-    peaks_acc_x = []
-    peaks_acc_y = []
-    peaks_acc_z = []
-    peaks_gyr_x = []
-    peaks_gyr_y = []
-    peaks_gyr_z = []
+    #peaks_acc_x = []
+    #peaks_acc_y = []
+    #peaks_acc_z = []
+    #peaks_gyr_x = []
+    #peaks_gyr_y = []
+    #peaks_gyr_z = []
     # Se lee data por la conexion serial
     #listen_forever()
     while True:
@@ -214,12 +215,12 @@ def mostrar_datos(datos):
 
     table_data = [
             [     "", "RMS", "Peak 1", "Peak 2", "Peak 3", "Peak 4", "Peak 5"],
-            ["acc_x", axRMS[0], peaks_ax[0], peaks_ax[1], peaks_ax[2], peaks_ax[3], peaks_ax[4]],
-            ["acc_y", axRMS[0], peaks_ay[0], peaks_ay[1], peaks_ay[2], peaks_ay[3], peaks_ay[4]],
-            ["acc_z", azRMS[0], peaks_az[0], peaks_az[1], peaks_az[2], peaks_az[3], peaks_az[4]],
-            ["gyr_x", gxRMS[0], peaks_gx[0], peaks_gx[1], peaks_gx[2], peaks_gx[3], peaks_gx[4]],
-            ["gyr_y", gyRMS[0], peaks_gy[0], peaks_gy[1], peaks_gy[2], peaks_gy[3], peaks_gy[4]],
-            ["gyr_z", gzRMS[0], peaks_gz[0], peaks_gz[1], peaks_gz[2], peaks_gz[3], peaks_gz[4]],
+            ["acc_x", axRMS, peaks_ax[0], peaks_ax[1], peaks_ax[2], peaks_ax[3], peaks_ax[4]],
+            ["acc_y", axRMS, peaks_ay[0], peaks_ay[1], peaks_ay[2], peaks_ay[3], peaks_ay[4]],
+            ["acc_z", azRMS, peaks_az[0], peaks_az[1], peaks_az[2], peaks_az[3], peaks_az[4]],
+            ["gyr_x", gxRMS, peaks_gx[0], peaks_gx[1], peaks_gx[2], peaks_gx[3], peaks_gx[4]],
+            ["gyr_y", gyRMS, peaks_gy[0], peaks_gy[1], peaks_gy[2], peaks_gy[3], peaks_gy[4]],
+            ["gyr_z", gzRMS, peaks_gz[0], peaks_gz[1], peaks_gz[2], peaks_gz[3], peaks_gz[4]],
             ]
     return table_data
 
@@ -302,6 +303,7 @@ class MainWindow(QMainWindow):
 
     def request_cierre(self):
         terminar_conexion()
+        self.close()
         sys.exit()
     
 class DataWindow(QWidget):
