@@ -92,9 +92,10 @@ def comenzar_lectura():
 
     while True:
         if ser.in_waiting > 0: #verifica si hay datos en el puerto serial
+            respuesta = receive_response()
+            print(respuesta)
             try:
-                message = receive_response()
-                if b"OK" in message:
+                if b"OK" in respuesta:
                     break
             except:
                 continue

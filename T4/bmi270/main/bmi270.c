@@ -7,7 +7,7 @@
 #include <time.h>
 #include <math.h>
 
-#include "driver/i2c.h"
+//#include "driver/i2c.h"
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "driver/uart.h"
