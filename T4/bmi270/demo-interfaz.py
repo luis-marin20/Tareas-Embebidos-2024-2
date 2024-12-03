@@ -15,11 +15,26 @@ PORT = 'COM3'  # Esto depende del sistema operativo
 BAUD_RATE = 115200  # Debe coincidir con la configuracion de la ESP32
 TIME = 1 # Tiempo de espera entre una medicion y otra
 global windows_size  # Tamaño de la ventana de mediciones
-windows_size = 20  # Valor por defecto
 
 
 # Se abre la conexion serial
 ser = serial.Serial(PORT, BAUD_RATE, timeout = 1)
+
+# Funciones de emergencia debido al problema con la BMI
+def save_window(value):
+    with open("windows_size.txt", "w") as file:
+        file.write(str(value))
+
+def load_window():
+    try:
+        with open("windows_size.txt", "r") as file:
+            return int(file.read())
+    except FileNotFoundError:
+        return None  # Valor inicial si el archivo no existe
+
+windows_size = load_window()
+if windows_size is None:
+    windows_size = 20
 
 # Funciones
 def insertar_ordenado(lista, dato):
@@ -271,6 +286,7 @@ class MainWindow(QMainWindow):
         if self.input.text().isnumeric():
             global windows_size
             windows_size = int(self.input.text())
+            save_window(windows_size)
             self.ventana = int(self.input.text())
             self.inicio_app()
         else:
