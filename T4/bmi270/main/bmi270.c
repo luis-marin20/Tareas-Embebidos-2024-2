@@ -602,16 +602,16 @@ void initialization(void) {
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 
     ret = bmi_write(&reg_init_ctrl, &val_init_ctrl2, 1);
-    // if(ret != ESP_OK){
-    //     printf("Error en write4: %s \n",esp_err_to_name(ret));
-    // }
-    // else {
-    //      printf("Init_ctrl = 1\n");
-    // }
+    if(ret != ESP_OK){
+        printf("Error en write4: %s \n",esp_err_to_name(ret));
+    }
+    else {
+         printf("Init_ctrl = 1\n");
+    }
 
     printf("\nAlgoritmo de inicializacion finalizado.\n\n");
 
-    // vTaskDelay(1000 /portTICK_PERIOD_MS);
+    vTaskDelay(1000 /portTICK_PERIOD_MS);
 }
 
 void check_initialization(void) {
@@ -845,46 +845,40 @@ void lectura(int window, int time) {
     float rms_gyr_y = 0;
     float rms_gyr_z = 0;
     for (int i = 0; i < window; i++){
-        //bmi_read(&reg_intstatus, &tmp, 1);
-        //if ((tmp & 0b10000000) == 0x80) {
-            // Leyendo datos de acelerómetro
-            //ret = bmi_read(&addr_acc_x_msb, &tmp, 1);
-            //acc_x = tmp;
-            acc_x = rand();
-            //acc_z = tmp;
-            acc_z = rand();
-            //acc_y = tmp;
-            acc_y = rand();
-            //ret = bmi_read(&addr_acc_x_lsb, &tmp, 1);
-            //acc_x = (acc_z << 8) | tmp;
+        bmi_read(&reg_intstatus, &tmp, 1);
+        if ((tmp & 0b10000000) == 0x80) {
+            //Leyendo datos de acelerómetro
+            ret = bmi_read(&addr_acc_x_msb, &tmp, 1);
+            acc_x = tmp;
+            acc_z = tmp;
+            acc_y = tmp;
+            ret = bmi_read(&addr_acc_x_lsb, &tmp, 1);
+            acc_x = (acc_z << 8) | tmp;
             data_acc_x[i] = acc_x;
-            //ret = bmi_read(&addr_acc_y_msb, &tmp, 1);
-            //ret = bmi_read(&addr_acc_y_lsb, &tmp, 1);
-            //acc_y = (acc_z << 8) | tmp;
+            ret = bmi_read(&addr_acc_y_msb, &tmp, 1);
+            ret = bmi_read(&addr_acc_y_lsb, &tmp, 1);
+            acc_y = (acc_z << 8) | tmp;
             data_acc_y[i] = acc_y;
-            //ret = bmi_read(&addr_acc_z_msb, &tmp, 1);
-            //ret = bmi_read(&addr_acc_z_lsb, &tmp, 1);
-            //acc_z = (acc_z << 8) | tmp;
+            ret = bmi_read(&addr_acc_z_msb, &tmp, 1);
+            ret = bmi_read(&addr_acc_z_lsb, &tmp, 1);
+            acc_z = (acc_z << 8) | tmp;
             data_acc_z[i] = acc_z; 
 
             // Leyendo datos de giroscopio
-            //ret = bmi_read(&addr_gyr_x_msb, &tmp, 1);
-            //gyr_x = tmp;
-            gyr_x = rand();
-            //ret = bmi_read(&addr_gyr_x_lsb, &tmp, 1);
-            //gyr_x = (acc_z << 8) | tmp;
+            ret = bmi_read(&addr_gyr_x_msb, &tmp, 1);
+            gyr_x = tmp;
+            ret = bmi_read(&addr_gyr_x_lsb, &tmp, 1);
+            gyr_x = (acc_z << 8) | tmp;
             data_gyr_x[i] = gyr_x;
-            //ret = bmi_read(&addr_gyr_y_msb, &tmp, 1);
-            //gyr_y = tmp;
-            gyr_y = rand();
-            //ret = bmi_read(&addr_gyr_y_lsb, &tmp, 1);
-            //gyr_y = (acc_z << 8) | tmp;
+            ret = bmi_read(&addr_gyr_y_msb, &tmp, 1);
+            gyr_y = tmp;
+            ret = bmi_read(&addr_gyr_y_lsb, &tmp, 1);
+            gyr_y = (acc_z << 8) | tmp;
             data_gyr_y[i] = gyr_y;
-            //ret = bmi_read(&addr_gyr_z_msb, &tmp, 1);
-            //gyr_z = tmp;
-            gyr_z = rand();
-            //ret = bmi_read(&addr_gyr_z_lsb, &tmp, 1);
-            //gyr_z = (acc_z << 8) | tmp;
+            ret = bmi_read(&addr_gyr_z_msb, &tmp, 1);
+            gyr_z = tmp;
+            ret = bmi_read(&addr_gyr_z_lsb, &tmp, 1);
+            gyr_z = (acc_z << 8) | tmp;
             data_gyr_z[i] = gyr_z;
 
             //Calculamos el RMS de los datos
@@ -924,10 +918,10 @@ void lectura(int window, int time) {
             uart_write_bytes(UART_NUM, send_gyr_x, strlen(send_gyr_x));
             uart_write_bytes(UART_NUM, " ", 1);
 
-            //if (ret != ESP_OK) {
-            //    printf("Error lectura: %s \n", esp_err_to_name(ret));
-            //}
-        //}
+            if (ret != ESP_OK) {
+                printf("Error lectura: %s \n", esp_err_to_name(ret));
+            }
+        }
     }
     // Calculamos el RMS de los datos
     printf("Calculando RMS de los datos\n");
@@ -1111,16 +1105,16 @@ int serial_read(char *buffer, int size){
 }
 
 void app_main(void) {
-    //ESP_ERROR_CHECK(bmi_init());
-    //softreset();
-    //chipid();
-    //initialization();
-    //check_initialization();
-    //bmipowermode();
-    //internal_status();
+    ESP_ERROR_CHECK(bmi_init());
+    softreset();
+    chipid();
+    initialization();
+    check_initialization();
+    bmipowermode();
+    internal_status();
     printf("Comienza lectura\n\n");
     // Esperamos respuesta de la computadora
-    //printf("Start program\n\n");
+    printf("Start program\n\n");
     char dataResponse1[6];
     // char *message = "Data received";
     while (1) {
